@@ -1,213 +1,164 @@
 import os
-import replicate
+import time
 import logging
-import asyncio
+import replicate
 from dotenv import load_dotenv
-from deep_translator import GoogleTranslator
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Update,
-    ReplyKeyboardRemove,
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
     ContextTypes,
-    filters,
+    filters
 )
+from googletrans import Translator
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_1 = os.getenv("CHANNEL_1")
-CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2 = os.getenv("CHANNEL_2")
+CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 GROUP_LINK = os.getenv("GROUP_LINK")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-TIME_LIMIT_MIN = int(os.getenv("TIME_LIMIT_MIN", 15))
+TIME_LIMIT = int(os.getenv("TIME_LIMIT_MIN")) * 60
 
-user_last_request = {}
+translator = Translator()
+user_last_call = {}
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+HELP_TEXT = """📌 راهنمای استفاده:
 
-# Membership check
-async def check_membership(user_id, bot):
-    try:
-        chat_member1 = await bot.get_chat_member(chat_id=CHANNEL_1, user_id=user_id)
-        chat_member2 = await bot.get_chat_member(chat_id=CHANNEL_2, user_id=user_id)
-        return chat_member1.status in ['member', 'administrator', 'creator'] and                chat_member2.status in ['member', 'administrator', 'creator']
-    except Exception as e:
-        logger.warning(f"Membership check error: {e}")
-        return False
+🖼 تبدیل متن به تصویر:
+با زدن دکمه «ساخت عکس از متن» یا دستور /prompt یک متن وارد کنید تا عکس ساخته شود.
 
-# Main menu
-def get_main_menu():
-    keyboard = [
-        [InlineKeyboardButton("🧠 تبدیل متن به عکس", callback_data="prompt")],
-        [InlineKeyboardButton("🎭 تبدیل عکس به انیمه", callback_data="anime")],
-        [InlineKeyboardButton("📢 راهنما", callback_data="help")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+🎭 تبدیل عکس به انیمه:
+روی دکمه «تبدیل عکس به انیمه» بزنید و عکس ارسال کنید تا به انیمه تبدیل شود.
 
-# Join check buttons
-def get_join_buttons():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("کانال ۱", url=CHANNEL_1_LINK)],
-        [InlineKeyboardButton("کانال ۲", url=CHANNEL_2_LINK)],
-        [InlineKeyboardButton("گروه اسپانسر", url=GROUP_LINK)],
-        [InlineKeyboardButton("✅ عضو شدم", callback_data="joined")]
-    ])
+⏳ توجه: برای حفظ کیفیت ربات، بین هر درخواست ۲۰ دقیقه فاصله است.
 
-def is_private_chat(update: Update):
-    return update.effective_chat.type == "private"
+از همراهی شما سپاسگزاریم 💖
+"""
+
+def translate_fa_to_en(text):
+    return translator.translate(text, src='fa', dest='en').text
+
+def check_time_limit(user_id):
+    now = time.time()
+    last_call = user_last_call.get(user_id, 0)
+    if now - last_call < TIME_LIMIT:
+        return int((TIME_LIMIT - (now - last_call)) / 60)
+    user_last_call[user_id] = now
+    return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_private_chat(update):
-        return
     user_id = update.effective_user.id
-    if not await check_membership(user_id, context.bot):
-        await update.message.reply_text(
-            "برای استفاده از ربات لطفاً ابتدا در کانال‌ها عضو شوید:",
-            reply_markup=get_join_buttons()
-        )
-        return
-    await update.message.reply_text("خوش آمدید 🎉", reply_markup=get_main_menu())
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_private_chat(update):
+    if update.message.chat.type != 'private':
         return
 
+    keyboard = [
+        [InlineKeyboardButton("📸 عضویت در کانال ۱", url=CHANNEL_1_LINK)],
+        [InlineKeyboardButton("🎨 عضویت در کانال ۲", url=CHANNEL_2_LINK)],
+        [InlineKeyboardButton("💬 گروه اسپانسر", url=GROUP_LINK)],
+        [InlineKeyboardButton("عضو شدم ✅", callback_data="check_membership")]
+    ]
+    await update.message.reply_text(
+        "🌟 به ربات خوش اومدی!
+
+لطفاً برای استفاده از ربات، ابتدا در کانال‌های زیر عضو شو:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def check_membership(user_id, context):
+    async def is_member(chat_id):
+        try:
+            member = await context.bot.get_chat_member(chat_id, user_id)
+            return member.status in ['member', 'administrator', 'creator']
+        except:
+            return False
+    return await is_member(CHANNEL_1) and await is_member(CHANNEL_2)
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    user_id = query.from_user.id
     await query.answer()
+    user_id = query.from_user.id
 
-    if query.data == "joined":
-        if not await check_membership(user_id, context.bot):
-            await query.message.reply_text("⛔️ هنوز عضو نشدید. لطفاً ابتدا در کانال‌ها عضو شوید.")
+    if query.data == "check_membership":
+        if await check_membership(user_id, context):
+            keyboard = [
+                [InlineKeyboardButton("🖼 ساخت عکس از متن", callback_data='text_to_image')],
+                [InlineKeyboardButton("🎭 تبدیل عکس به انیمه", callback_data='photo_to_anime')],
+                [InlineKeyboardButton("📚 راهنما", callback_data='help')]
+            ]
+            await query.edit_message_text("✅ عضویت تایید شد! یکی از گزینه‌های زیر رو انتخاب کن:", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
-            await query.message.reply_text("✅ خوش آمدید!", reply_markup=get_main_menu())
+            await query.edit_message_text("❌ هنوز عضویت شما تایید نشده. لطفاً ابتدا در هر دو کانال عضو شوید و مجدداً امتحان کنید.")
 
-    elif query.data == "prompt":
-        context.user_data["mode"] = "text"
-        await query.message.reply_text("📝 لطفاً یک متن بفرستید.", reply_markup=ReplyKeyboardRemove())
+    elif query.data == 'text_to_image':
+        limit = check_time_limit(user_id)
+        if limit:
+            await query.edit_message_text(f"⏳ لطفاً {limit} دقیقه دیگه دوباره تلاش کنید.")
+            return
+        context.user_data['mode'] = 'text'
+        await query.edit_message_text("📝 لطفاً یک متن بفرست تا تصویر ساخته بشه.")
 
-    elif query.data == "anime":
-        context.user_data["mode"] = "anime"
-        await query.message.reply_text("📸 لطفاً یک عکس ارسال کنید.", reply_markup=ReplyKeyboardRemove())
+    elif query.data == 'photo_to_anime':
+        limit = check_time_limit(user_id)
+        if limit:
+            await query.edit_message_text(f"⏳ لطفاً {limit} دقیقه دیگه دوباره تلاش کنید.")
+            return
+        context.user_data['mode'] = 'photo'
+        await query.edit_message_text("📤 لطفاً عکس مورد نظر رو ارسال کن.")
 
     elif query.data == "help":
-        await query.message.reply_text(
-            """📌 راهنمای استفاده:
-"
-            "- عکس آپلود کن، تبدیل میشه به انیمه: /anime
-"
-            "- متن بده، عکس تحویلت می‌دیم: /prompt
-"
-            "- فاصله بین درخواست‌ها طبق محدودیت تعیین‌شده توسط ادمینه.""",
-            reply_markup=get_main_menu()
-        )
+        await query.edit_message_text(HELP_TEXT)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_private_chat(update):
-        return
-
-    if context.user_data.get("mode") != "text":
-        return
-
+    if context.user_data.get("mode") != 'text': return
     user_id = update.effective_user.id
-    now = asyncio.get_event_loop().time()
-    last = user_last_request.get(user_id, 0)
-    if now - last < TIME_LIMIT_MIN * 60:
-        wait_sec = int(TIME_LIMIT_MIN * 60 - (now - last))
-        await update.message.reply_text(f"⏳ لطفاً {wait_sec} ثانیه صبر کن.")
-        return
-    user_last_request[user_id] = now
-
     prompt = update.message.text
-    prompt_en = GoogleTranslator(source='auto', target='en').translate(prompt)
-
-    await update.message.reply_text("🎨 در حال ساخت تصویر...")
-
-    try:
-        output = replicate.run(
-            "stability-ai/stable-diffusion",
-            input={"prompt": prompt_en, "num_outputs": 1, "guidance_scale": 7.5, "num_inference_steps": 40},
-            api_token=REPLICATE_API_TOKEN
-        )
-        if output and isinstance(output, list):
-            await context.bot.send_photo(chat_id=user_id, photo=output[0])
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=output[0], caption=f"🎨 Text2Image توسط کاربر {user_id}")
-        else:
-            await update.message.reply_text("⚠️ خطا در دریافت عکس از سرور.")
-    except Exception as e:
-        logger.error(f"Replicate error: {e}")
-        await update.message.reply_text("❌ مشکلی در پردازش پیش آمد.")
+    await update.message.reply_text("⏳ در حال تولید تصویر...")
+    translated_prompt = translate_fa_to_en(prompt)
+    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+    output = replicate.run(
+        "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
+        input={"prompt": translated_prompt, "num_outputs": 1}
+    )
+    if output:
+        await update.message.reply_photo(photo=output[0])
+        await context.bot.send_photo(chat_id=ADMIN_ID, photo=output[0], caption=f"📤 تصویر کاربر {user_id}")
+    else:
+        await update.message.reply_text("❌ مشکلی در تولید تصویر پیش اومد.")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_private_chat(update):
-        return
-
-    if context.user_data.get("mode") != "anime":
-        return
-
+    if context.user_data.get("mode") != 'photo': return
     user_id = update.effective_user.id
-    now = asyncio.get_event_loop().time()
-    last = user_last_request.get(user_id, 0)
-    if now - last < TIME_LIMIT_MIN * 60:
-        wait_sec = int(TIME_LIMIT_MIN * 60 - (now - last))
-        await update.message.reply_text(f"⏳ لطفاً {wait_sec} صبر کن.")
-        return
-    user_last_request[user_id] = now
+    photo = await update.message.photo[-1].get_file()
+    photo_path = f"{user_id}_photo.jpg"
+    await photo.download_to_drive(photo_path)
+    await update.message.reply_text("⏳ در حال تبدیل عکس به انیمه...")
+    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+    output = replicate.run(
+        "laksjd/animegan-v2:d5918e02b7353e92b293e38f5584dc86b62b978089f8f6e9f5ef16b7074c35d7",
+        input={"image": open(photo_path, "rb")}
+    )
+    if output:
+        await update.message.reply_photo(photo=output[0])
+        await context.bot.send_photo(chat_id=ADMIN_ID, photo=output[0], caption=f"🎭 عکس انیمه‌شده از کاربر {user_id}")
+    else:
+        await update.message.reply_text("❌ مشکلی در تبدیل عکس پیش اومد.")
 
-    await update.message.reply_text("🎨 در حال تبدیل عکس به انیمه...")
-
-    try:
-        photo = update.message.photo[-1]
-        file = await photo.get_file()
-        image_url = file.file_path
-
-        output = replicate.run(
-            "laksjd/animegan-v2",
-            input={"image": image_url},
-            api_token=REPLICATE_API_TOKEN
-        )
-        if output and isinstance(output, str):
-            await context.bot.send_photo(chat_id=user_id, photo=output)
-            await context.bot.send_photo(chat_id=ADMIN_ID, photo=output, caption=f"🖼️ Anime توسط کاربر {user_id}")
-        else:
-            await update.message.reply_text("⚠️ مشکلی در دریافت عکس انیمه به وجود آمد.")
-    except Exception as e:
-        logger.error(f"Anime error: {e}")
-        await update.message.reply_text("❌ مشکلی در پردازش پیش آمد.")
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    users = len(user_last_request)
-    await update.message.reply_text(f"📊 تعداد کاربران فعال: {users}")
-
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("prompt", lambda u, c: c.bot.send_message(chat_id=u.effective_chat.id, text="📝 لطفاً یک متن بفرستید.")))
-    app.add_handler(CommandHandler("anime", lambda u, c: c.bot.send_message(chat_id=u.effective_chat.id, text="📸 لطفاً یک عکس ارسال کنید.")))
-    app.add_handler(CommandHandler("help", lambda u, c: c.bot.send_message(chat_id=u.effective_chat.id, text="📌 راهنمای استفاده:
-- /prompt و /anime")))
-
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & filters.PRIVATE, handle_text))
-    app.add_handler(MessageHandler(filters.PHOTO & filters.PRIVATE, handle_photo))
-
-    print("ربات در حال اجراست...")
-    app.run_polling()
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(HELP_TEXT)
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.run_polling()
