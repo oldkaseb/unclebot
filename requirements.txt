@@ -1,6 +1,6 @@
 python-telegram-bot==20.7
-replicate
-requests
-python-dotenv
-deep-translator
-aiohttp
+python-dotenv==1.1.1
+requests==2.32.4
+replicate==1.0.7
+googletrans==4.0.0rc1
+aiohttp==3.8.6
