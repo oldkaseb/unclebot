@@ -167,13 +167,16 @@ async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- بررسی مصرف ---
 def check_replicate_usage():
     url = "https://api.replicate.com/v1/account/usage"
-    headers = {"Authorization": f"Token {REPLICATE_TOKEN}"}
-    response = requests.get(url, headers=headers)
-    data = response.json()
-    remaining = data['credits']['remaining']
-    if remaining < 20:
-        return True
-    return False
+    headers = {"Authorization": f"Token {REPLICATE_API_TOKEN}"}
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        remaining = data.get("credits", {}).get("remaining", 999)  # اگر وجود نداشت، پیش‌فرض 999
+        return remaining
+    except Exception as e:
+        print("خطا در گرفتن اعتبار Replicate:", e)
+        return 999
+
 
 # --- اجرای ربات ---
 if __name__ == '__main__':
