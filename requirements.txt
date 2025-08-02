@@ -1,4 +1,6 @@
-python-telegram-bot
-replicate
-aiohttp
-nest_asyncio
+aiogram==2.25.2
+python-dotenv==1.0.1
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.2.1
+pillow==10.3.0
