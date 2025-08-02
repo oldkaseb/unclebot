@@ -81,12 +81,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "check_subscription":
-        if await is_user_member(user_id):
-            await query.edit_message_text("✅ عضویت شما تأیید شد. حالا یکی از گزینه‌ها رو انتخاب کن:")
-            await start(update, context)
-        else:
-            await query.edit_message_text("⛔️ هنوز در یکی از کانال‌ها عضو نیستی! لطفاً دوباره بررسی کن.",
-                                          reply_markup=build_subscription_keyboard())
+    if await is_user_member(user_id):
+        keyboard = [[
+            InlineKeyboardButton("🖼 تبدیل متن به عکس", callback_data="text_to_image"),
+            InlineKeyboardButton("🎌 تبدیل عکس به انیمه", callback_data="photo_to_anime")
+        ]]
+        await query.edit_message_text(
+            "✅ عضویت شما تأیید شد. حالا یکی از گزینه‌ها رو انتخاب کن:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        await query.edit_message_text(
+            "⛔️ هنوز در یکی از کانال‌ها عضو نیستی! لطفاً دوباره بررسی کن.",
+            reply_markup=build_subscription_keyboard()
+        )
+
 
     elif query.data == "text_to_image":
         context.user_data['mode'] = 'prompt'
