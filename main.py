@@ -1,189 +1,170 @@
-import logging
 import os
-import random
-import requests
-from PIL import Image
-from io import BytesIO
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
-from aiogram.utils.exceptions import BadRequest
+import logging
+import asyncio
+import openai
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram.ext import (ApplicationBuilder, CommandHandler, ContextTypes,
+                          MessageHandler, CallbackQueryHandler, filters)
 
+# فعال‌سازی لاگ‌ها
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# بارگذاری متغیرها از Railway
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_1 = os.getenv("CHANNEL_1")
 CHANNEL_2 = os.getenv("CHANNEL_2")
 CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
+GROUP_ID = os.getenv("GROUP_ID")
 GROUP_LINK = os.getenv("GROUP_LINK")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
-PEXELS_KEY = os.getenv("PEXELS_API_KEY")
-PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
+TIME_LIMIT_MIN = int(os.getenv("TIME_LIMIT_MIN", 15))
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "dall-e-3")
+openai.api_key = OPENAI_API_KEY
 
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+# ذخیره‌سازی آخرین زمان استفاده کاربران
+user_last_prompt_time = {}
 
-sent_cache = {}  # user_id: set of image URLs
-
-@dp.message_handler(commands=["start"])
-async def cmd_start(message: types.Message):
-    sent_cache[message.from_user.id] = set()
-    await show_subscription_check(message)
-
-async def show_subscription_check(message):
-    text = "لطفاً ابتدا در کانال‌های زیر عضو شوید ⬇️"
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton("کانال 1", url=CHANNEL_1_LINK),
-        InlineKeyboardButton("کانال 2", url=CHANNEL_2_LINK),
-        InlineKeyboardButton("✅ عضو شدم", callback_data="check_subs"),
-        InlineKeyboardButton("گروه چت اسپانسر", url=GROUP_LINK)
-    )
-    await message.answer(text, reply_markup=keyboard)
-
-@dp.callback_query_handler(lambda c: c.data == "check_subs")
-async def check_subscription(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-
-    async def is_member(channel):
-        try:
-            member = await bot.get_chat_member(channel, user_id)
-            return member.status in ["member", "creator", "administrator"]
-        except:
-            return False
-
-    if await is_member(CHANNEL_1) and await is_member(CHANNEL_2):
-        await show_main_menu(callback.message)
-    else:
-        await callback.answer("عضویت کامل نیست ❌", show_alert=True)
-
-async def show_main_menu(message):
-    text = "به ربات عمو عکسی خوش آمدی! فقط جستجو کن یا یکی از شماره‌های پیشنهادی رو بزن."
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(
-        KeyboardButton("🔍 جستجو"),
-        KeyboardButton("ℹ️ درباره"),
-        KeyboardButton("❓ راهنما")
-    ).add(
-        KeyboardButton("📞 ارتباط با سازنده")
-    )
-    await message.answer(text, reply_markup=keyboard)
-
-@dp.message_handler(lambda msg: msg.text.startswith("❓") or msg.text.startswith("ℹ️") or msg.text.startswith("📞"))
-async def static_pages(message: types.Message):
-    if "❓" in message.text:
-        await message.answer("📘 فقط کلمه‌ای مثل 'دختر انیمه' یا 'پروفایل تاریک' تایپ کن یا یکی از شماره‌های پیشنهادی رو بزن.")
-    elif "ℹ️" in message.text:
-        await message.answer("🤖 ربات عمو عکسی توسط تیم راینو ساخته شده برای ارسال عکس‌های با کیفیت و مناسب پروفایل.")
-    elif "📞" in message.text:
-        await message.answer("📬 تماس با ما: @oldkaseb")
-
-@dp.message_handler(lambda msg: "جستجو" in msg.text)
-async def suggest_keywords(message: types.Message):
-    keyboard = InlineKeyboardMarkup(row_width=4)
-    for i in range(1, 81):
-        keyboard.insert(InlineKeyboardButton(str(i), callback_data=f"q_{i}"))
-    await message.answer("🔢 یکی از گزینه‌های پیشنهادی رو انتخاب کن یا متن مورد نظرتو تایپ کن:", reply_markup=keyboard)
-
-@dp.callback_query_handler(lambda c: c.data.startswith("q_"))
-async def handle_suggested_query(callback: types.CallbackQuery):
-    number = callback.data[2:]
-    query = f"پروفایل شماره {number}"
-    await fetch_and_send_images(callback.message, query, callback.from_user.id)
+# بررسی عضویت کاربر
+async def is_user_member(user_id: int) -> bool:
     try:
-        await callback.message.edit_reply_markup()
-    except BadRequest:
-        pass
-    await show_retry_button(callback.message)
+        chat1 = await app.bot.get_chat_member(chat_id=f"@{CHANNEL_1}", user_id=user_id)
+        chat2 = await app.bot.get_chat_member(chat_id=f"@{CHANNEL_2}", user_id=user_id)
+        return chat1.status in ["member", "creator", "administrator"] and chat2.status in ["member", "creator", "administrator"]
+    except:
+        return False
 
-@dp.message_handler(content_types=types.ContentType.TEXT)
-async def handle_custom_query(message: types.Message):
-    if message.text.lower().startswith("/"):
+# شروع ربات
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not await is_user_member(user_id):
+        keyboard = [[
+            InlineKeyboardButton("عضویت در کانال 1", url=CHANNEL_1_LINK),
+            InlineKeyboardButton("عضویت در کانال 2", url=CHANNEL_2_LINK)
+        ], [
+            InlineKeyboardButton("عضو شدم ✅", callback_data="check_membership")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("👋 برای استفاده از ربات لطفاً در کانال‌های زیر عضو شوید:", reply_markup=reply_markup)
         return
-    await fetch_and_send_images(message, message.text, message.from_user.id)
-    await show_retry_button(message)
 
-async def show_retry_button(message):
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("🔍 جستجوی مجدد", callback_data="again"))
-    await message.answer("می‌تونی دوباره جستجو کنی:", reply_markup=keyboard)
+    keyboard = [[
+        InlineKeyboardButton("🖼 ساخت عکس از متن", callback_data="generate_image"),
+        InlineKeyboardButton("✏️ ویرایش عکس", callback_data="edit_image")
+    ], [
+        InlineKeyboardButton("🔁 جستجوی تصویر", callback_data="search_image")
+    ], [
+        InlineKeyboardButton("💬 گروه اسپانسر", url=GROUP_LINK)
+    ]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("به ربات ساخت و ویرایش عکس خوش آمدید! 👇 یکی از گزینه‌ها رو انتخاب کن:", reply_markup=reply_markup)
 
-@dp.callback_query_handler(lambda c: c.data == "again")
-async def retry_suggestions(callback: types.CallbackQuery):
-    await suggest_keywords(callback.message)
-
-
-def unsplash_fetch(query):
-    try:
-        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=30&orientation=squarish&content_filter=high&client_id={UNSPLASH_KEY}"
-        r = requests.get(url)
-        data = r.json()
-        return [item["urls"]["regular"] for item in data.get("results", []) if item.get("width", 0) >= 600 and item.get("height", 0) >= 600]
-    except:
-        return []
-
-def pexels_fetch(query):
-    try:
-        url = f"https://api.pexels.com/v1/search?query={query}&per_page=30"
-        headers = {"Authorization": PEXELS_KEY}
-        r = requests.get(url, headers=headers)
-        data = r.json()
-        return [item["src"]["large"] for item in data.get("photos", []) if "face" not in item.get("alt", "").lower()]
-    except:
-        return []
-
-def pixabay_fetch(query):
-    try:
-        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&category=backgrounds&safesearch=true&editors_choice=true&per_page=30"
-        r = requests.get(url)
-        data = r.json()
-        return [item["largeImageURL"] for item in data.get("hits", []) if not item.get("userImageURL") and "face" not in item.get("tags", "").lower()]
-    except:
-        return []
-
-def make_square_image_from_url(url):
-    try:
-        response = requests.get(url)
-        if len(response.content) < 100 * 1024:
-            return None
-        img = Image.open(BytesIO(response.content)).convert("RGB")
-        if img.width < 600 or img.height < 600:
-            return None
-        min_side = min(img.size)
-        left = (img.width - min_side) // 2
-        top = (img.height - min_side) // 2
-        cropped = img.crop((left, top, left + min_side, top + min_side))
-        output = BytesIO()
-        output.name = "profile.jpg"
-        cropped.save(output, format="JPEG")
-        output.seek(0)
-        return output
-    except:
-        return None
-
-async def fetch_and_send_images(message, query, user_id):
-    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت ...")
-    imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
-    random.shuffle(imgs)
-    new_imgs = []
-    seen = sent_cache.setdefault(user_id, set())
-
-    for url in imgs:
-        if url in seen:
-            continue
-        file = make_square_image_from_url(url)
-        if file:
-            new_imgs.append(InputMediaPhoto(media=file))
-            seen.add(url)
-        if len(new_imgs) >= 10:
-            break
-
-    if new_imgs:
-        await bot.send_media_group(message.chat.id, new_imgs)
-        await message.answer("✅ عکس‌ها ارسال شدند.")
+# بررسی عضویت پس از کلیک روی دکمه
+async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    await query.answer()
+    if await is_user_member(user_id):
+        await query.edit_message_text("✅ عضویت شما تایید شد. یکی از گزینه‌ها رو انتخاب کن:")
+        return await start(update, context)
     else:
-        await message.answer("متأسفم! عکسی با کیفیت مناسب پیدا نشد.")
+        await query.edit_message_text("❌ هنوز عضو نیستی. لطفا مجدد تلاش کن.")
 
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+# فراخوانی ساخت تصویر از متن
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    now = asyncio.get_event_loop().time()
+    last_time = user_last_prompt_time.get(user_id, 0)
+    if now - last_time < TIME_LIMIT_MIN * 60:
+        remain = int(TIME_LIMIT_MIN - (now - last_time) / 60)
+        await update.message.reply_text(f"⏳ لطفا {remain} دقیقه صبر کن و دوباره تلاش کن.")
+        return
+
+    prompt = update.message.text
+    await update.message.reply_text("⏱ در حال تولید تصویر، لطفا صبر کنید...")
+    try:
+        response = openai.images.generate(
+            model=OPENAI_MODEL,
+            prompt=prompt,
+            n=1,
+            size="1024x1024"
+        )
+        image_url = response.data[0].url
+        await update.message.reply_photo(photo=image_url)
+        user_last_prompt_time[user_id] = now
+    except Exception as e:
+        await update.message.reply_text("❌ خطا در ساخت تصویر: " + str(e))
+
+# حالت دریافت تصویر برای ویرایش
+editing_users = {}
+
+async def edit_image_step1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text("لطفا یک عکس بفرست تا ویرایش کنم ✏️")
+    editing_users[update.effective_user.id] = "waiting_for_photo"
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if editing_users.get(user_id) != "waiting_for_photo":
+        return
+    photo_file = update.message.photo[-1]
+    file = await photo_file.get_file()
+    file_path = f"temp_{user_id}.jpg"
+    await file.download_to_drive(file_path)
+    editing_users[user_id] = file_path
+    await update.message.reply_text("✅ عکس دریافت شد. حالا دستور ویرایش رو بنویس (مثلاً: پس‌زمینه رو ساحل کن)")
+
+async def handle_edit_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in editing_users or not editing_users[user_id].endswith(".jpg"):
+        return
+    file_path = editing_users[user_id]
+    prompt = update.message.text
+    await update.message.reply_text("در حال ویرایش تصویر...")
+    try:
+        with open(file_path, "rb") as f:
+            response = openai.images.edit(
+                image=f,
+                prompt=prompt,
+                model=OPENAI_MODEL
+            )
+        image_url = response.data[0].url
+        await update.message.reply_photo(photo=image_url)
+    except Exception as e:
+        await update.message.reply_text("❌ خطا در ویرایش تصویر: " + str(e))
+    editing_users.pop(user_id, None)
+
+# توابع انتخاب حالت از دکمه‌ها
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    await query.answer()
+    if data == "check_membership":
+        return await check_membership(update, context)
+    elif data == "generate_image":
+        await query.edit_message_text("لطفا یک توضیح برای تصویر بنویس (مثلا: "یک گربه در حال نواختن گیتار")")
+    elif data == "edit_image":
+        return await edit_image_step1(update, context)
+    elif data == "search_image":
+        await query.edit_message_text("🔍 این قابلیت به‌زودی فعال خواهد شد...")
+
+# اجرای اصلی
+async def main():
+    global app
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & filters.UpdateType.MESSAGE, handle_edit_prompt))
+
+    print("🤖 ربات با موفقیت راه‌اندازی شد.")
+    await app.run_polling(close_loop=False)
+
+import nest_asyncio
+nest_asyncio.apply()
+
+asyncio.run(main())
