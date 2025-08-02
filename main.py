@@ -2,6 +2,7 @@ import os
 import replicate
 import logging
 import asyncio
+import nest_asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler,
                           filters, ContextTypes, CallbackQueryHandler)
@@ -139,10 +140,5 @@ async def main():
     await app.run_polling()
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "event loop is already running" in str(e):
-            logger.warning("Event loop already running. Skipping asyncio.run().")
-        else:
-            raise
+    nest_asyncio.apply()
+    asyncio.get_event_loop().run_until_complete(main())
