@@ -15,7 +15,6 @@ from telegram.ext import (
 nest_asyncio.apply()
 logging.basicConfig(level=logging.INFO)
 
-# 🔐 متغیرها
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_1 = os.getenv("CHANNEL_1")
 CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
@@ -26,14 +25,12 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# 🎛️ منوی اصلی
 def get_main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👁️ تبدیل عکس به انیمه", callback_data='anime')],
-        [InlineKeyboardButton("🖼️ تبدیل متن به عکس", callback_data='prompt')]
+        [InlineKeyboardButton("🖼️ تولید عکس انیمه از متن", callback_data='prompt')]
     ])
 
-# 📋 بررسی عضویت در کانال‌ها
 async def check_user_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
         chat1 = await context.bot.get_chat_member(CHANNEL_1, user_id)
@@ -43,7 +40,6 @@ async def check_user_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE
     except:
         return False
 
-# 🖼️ آپلود تصویر روی ImgBB
 async def upload_to_imgbb(image_bytes):
     encoded = base64.b64encode(image_bytes).decode("utf-8")
     async with aiohttp.ClientSession() as session:
@@ -52,7 +48,6 @@ async def upload_to_imgbb(image_bytes):
             result = await resp.json()
             return result.get("data", {}).get("url")
 
-# 🚀 دستورات ربات
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -96,7 +91,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎨 در حال تبدیل عکس به انیمه...")
     try:
         output = await asyncio.to_thread(replicate_client.run,
-            "laksjd/animegan-v2",
+            "cjwbw/animegan2",
             input={"image": public_url}
         )
         if isinstance(output, list) and output:
@@ -110,10 +105,10 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("state") != "prompt":
         return
     prompt = update.message.text
-    await update.message.reply_text("🧠 در حال تولید تصویر...")
+    await update.message.reply_text("🧠 در حال تولید تصویر انیمه...")
     try:
         output = await asyncio.to_thread(replicate_client.run,
-            "stability-ai/stable-diffusion",
+            "andite/anything-v4",
             input={"prompt": prompt}
         )
         if isinstance(output, list) and output:
@@ -134,7 +129,6 @@ async def anime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["state"] = "anime"
     await update.message.reply_text("📸 لطفاً عکس موردنظرت رو بفرست:")
 
-# 🧠 اجرای ربات
 async def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
