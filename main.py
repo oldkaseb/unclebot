@@ -2,6 +2,7 @@ import logging
 import os
 import replicate
 import time
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler)
 from deep_translator import GoogleTranslator
@@ -106,32 +107,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # هندل پیام متنی
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-
-    user_id = update.effective_user.id
-    if not await is_user_member(user_id):
-        await send_subscription_message(update.message, context.bot)
-        return
-
-    if context.user_data.get('mode') != 'prompt':
-        await update.message.reply_text("لطفاً یکی از گزینه‌های منو را انتخاب کنید.")
-        return
-
-    now = time.time()
-    last = user_last_request_time.get(user_id, 0)
-    if now - last < TIME_LIMIT_MIN * 60:
-        remain = int((TIME_LIMIT_MIN * 60 - (now - last)) // 60)
-        await update.message.reply_text(f"⏳ لطفاً {remain} دقیقه دیگر دوباره تلاش کن.")
-        return
-
-    prompt = update.message.text
-    translated = GoogleTranslator(source='auto', target='en').translate(prompt)
-
-    msg = await update.message.reply_text("⏳ در حال تولید تصویر...")
     try:
+        if update.effective_chat.type != "private":
+            return
+
+        user_id = update.effective_user.id
+        if not await is_user_member(user_id):
+            await send_subscription_message(update.message, context.bot)
+            return
+
+        if context.user_data.get('mode') != 'prompt':
+            await update.message.reply_text("لطفاً یکی از گزینه‌های منو را انتخاب کنید.")
+            return
+
+        now = time.time()
+        last = user_last_request_time.get(user_id, 0)
+        if now - last < TIME_LIMIT_MIN * 60:
+            remain = int((TIME_LIMIT_MIN * 60 - (now - last)) // 60)
+            await update.message.reply_text(f"⏳ لطفاً {remain} دقیقه دیگر دوباره تلاش کن.")
+            return
+
+        prompt = update.message.text
+        translated = GoogleTranslator(source='auto', target='en').translate(prompt)
+
+        msg = await update.message.reply_text("⏳ در حال تولید تصویر...")
         output = replicate.run(
-            "stability-ai/sdxl",
+            "stability-ai/sdxl:1b3de58e268e27f8cabc36ba1c2bbfd8419296db1de12a4741c1ff8c0d6d7509",
             input={"prompt": translated}
         )
         await msg.delete()
@@ -140,37 +141,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         import traceback
         print(traceback.format_exc())
-        await msg.edit_text("❌ مشکلی در تولید تصویر به‌وجود آمد. لطفاً بعداً تلاش کن.")
+        await update.message.reply_text("❌ مشکلی در تولید تصویر به‌وجود آمد. لطفاً بعداً تلاش کن.")
+        await start(update, context)
 
 # هندل عکس ارسالی
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-
-    user_id = update.effective_user.id
-    if not await is_user_member(user_id):
-        await send_subscription_message(update.message, context.bot)
-        return
-
-    if context.user_data.get('mode') != 'photo':
-        await update.message.reply_text("لطفاً از منو گزینه «تبدیل عکس به انیمه» رو انتخاب کن.")
-        return
-
-    now = time.time()
-    last = user_last_request_time.get(user_id, 0)
-    if now - last < TIME_LIMIT_MIN * 60:
-        remain = int((TIME_LIMIT_MIN * 60 - (now - last)) // 60)
-        await update.message.reply_text(f"⏳ لطفاً {remain} دقیقه دیگر دوباره تلاش کن.")
-        return
-
-    msg = await update.message.reply_text("🎨 در حال تبدیل عکس به انیمه...")
     try:
+        if update.effective_chat.type != "private":
+            return
+
+        user_id = update.effective_user.id
+        if not await is_user_member(user_id):
+            await send_subscription_message(update.message, context.bot)
+            return
+
+        if context.user_data.get('mode') != 'photo':
+            await update.message.reply_text("لطفاً از منو گزینه «تبدیل عکس به انیمه» رو انتخاب کن.")
+            return
+
+        now = time.time()
+        last = user_last_request_time.get(user_id, 0)
+        if now - last < TIME_LIMIT_MIN * 60:
+            remain = int((TIME_LIMIT_MIN * 60 - (now - last)) // 60)
+            await update.message.reply_text(f"⏳ لطفاً {remain} دقیقه دیگر دوباره تلاش کن.")
+            return
+
+        msg = await update.message.reply_text("🎨 در حال تبدیل عکس به انیمه...")
         photo = update.message.photo[-1]
         file = await photo.get_file()
         image_url = file.file_path
 
         output = replicate.run(
-            "tstramer/animegan",
+            "cjwbw/animegan-v2:3fbfe6f84d5e447d94e718b07f8d9a2d14df9b2a78ff9fe116f2b6b13c1b7084",
             input={"image": image_url}
         )
         await msg.delete()
@@ -179,15 +181,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         import traceback
         print(traceback.format_exc())
-        await msg.edit_text("❌ تبدیل عکس با خطا مواجه شد. لطفاً عکس دیگری امتحان کن.")
+        await update.message.reply_text("❌ تبدیل عکس با خطا مواجه شد. لطفاً عکس دیگری امتحان کن.")
+        await start(update, context)
 
 # اجرای ربات
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(button_handler))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+async def main():
+    global app
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    await app.run_polling()
 
 if __name__ == '__main__':
-    print("ربات اجرا شد...")
-    app.run_polling()
+    asyncio.run(main())
