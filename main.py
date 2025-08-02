@@ -5,7 +5,8 @@ import requests
 from PIL import Image
 from io import BytesIO
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
+from aiogram.utils.exceptions import BadRequest
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,8 +24,11 @@ PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
+sent_cache = {}  # user_id: set of image URLs
+
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
+    sent_cache[message.from_user.id] = set()
     await show_subscription_check(message)
 
 async def show_subscription_check(message):
@@ -55,7 +59,7 @@ async def check_subscription(callback: types.CallbackQuery):
         await callback.answer("عضویت کامل نیست ❌", show_alert=True)
 
 async def show_main_menu(message):
-    text = "به ربات عمو عکسی خوش آمدی! کلمه دلخواه برای جستجوی عکس پروفایل رو بنویس یا یکی از پیشنهادها رو انتخاب کن."
+    text = "به ربات عمو عکسی خوش آمدی! فقط جستجو کن یا یکی از شماره‌های پیشنهادی رو بزن."
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
         KeyboardButton("🔍 جستجو"),
@@ -69,36 +73,50 @@ async def show_main_menu(message):
 @dp.message_handler(lambda msg: msg.text.startswith("❓") or msg.text.startswith("ℹ️") or msg.text.startswith("📞"))
 async def static_pages(message: types.Message):
     if "❓" in message.text:
-        await message.answer("📘 فقط کافیه یه کلمه مثل 'دختر هنری' یا 'انیمه تیره' تایپ کنی یا یکی از پیشنهادها رو بزنی. عکس‌های مربعی، بدون چهره و با کیفیت برات ارسال می‌شن!")
+        await message.answer("📘 فقط کلمه‌ای مثل 'دختر انیمه' یا 'پروفایل تاریک' تایپ کن یا یکی از شماره‌های پیشنهادی رو بزن.")
     elif "ℹ️" in message.text:
-        await message.answer("🤖 ربات عمو عکسی توسط تیم راینو ساخته شده برای ارائه عکس‌های خاص، فانتزی، انیمه و مینیمال مناسب پروفایل.")
+        await message.answer("🤖 ربات عمو عکسی توسط تیم راینو ساخته شده برای ارسال عکس‌های با کیفیت و مناسب پروفایل.")
     elif "📞" in message.text:
         await message.answer("📬 تماس با ما: @oldkaseb")
 
 @dp.message_handler(lambda msg: "جستجو" in msg.text)
 async def suggest_keywords(message: types.Message):
-    suggestions = [
-        "پروفایل دختر فانتزی", "پروفایل تیره بدون چهره", "پروفایل انیمه مینیمال", "دختر پاستلی", "پس‌زمینه هنری" 
-    ] + [f"پروفایل شماره {i}" for i in range(6, 81)]
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for s in suggestions:
-        keyboard.add(InlineKeyboardButton(s, callback_data=f"q_{s}"))
-    await message.answer("🔍 یکی از پیشنهادها رو انتخاب کن یا کلمه‌ی دلخواه رو تایپ کن:", reply_markup=keyboard)
+    keyboard = InlineKeyboardMarkup(row_width=4)
+    for i in range(1, 81):
+        keyboard.insert(InlineKeyboardButton(str(i), callback_data=f"q_{i}"))
+    await message.answer("🔢 یکی از گزینه‌های پیشنهادی رو انتخاب کن:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("q_"))
 async def handle_suggested_query(callback: types.CallbackQuery):
-    query = callback.data[2:]
-    await fetch_and_send_images(callback.message, query)
+    number = callback.data[2:]
+    query = f"پروفایل شماره {number}"
+    await fetch_and_send_images(callback.message, query, callback.from_user.id)
+    try:
+        await callback.message.edit_reply_markup()
+    except BadRequest:
+        pass
+    await show_retry_button(callback.message)
 
 @dp.message_handler(content_types=types.ContentType.TEXT)
 async def handle_custom_query(message: types.Message):
     if message.text.lower().startswith("/"):
         return
-    await fetch_and_send_images(message, message.text)
+    await fetch_and_send_images(message, message.text, message.from_user.id)
+    await show_retry_button(message)
+
+async def show_retry_button(message):
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("🔍 جستجوی مجدد", callback_data="again"))
+    await message.answer("می‌تونی دوباره جستجو کنی:", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data == "again")
+async def retry_suggestions(callback: types.CallbackQuery):
+    await suggest_keywords(callback.message)
+
 
 def unsplash_fetch(query):
     try:
-        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=10&orientation=squarish&content_filter=high&client_id={UNSPLASH_KEY}"
+        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=30&orientation=squarish&content_filter=high&client_id={UNSPLASH_KEY}"
         r = requests.get(url)
         data = r.json()
         return [item["urls"]["regular"] for item in data.get("results", []) if item.get("width", 0) >= 600 and item.get("height", 0) >= 600]
@@ -107,7 +125,7 @@ def unsplash_fetch(query):
 
 def pexels_fetch(query):
     try:
-        url = f"https://api.pexels.com/v1/search?query={query}&per_page=10"
+        url = f"https://api.pexels.com/v1/search?query={query}&per_page=30"
         headers = {"Authorization": PEXELS_KEY}
         r = requests.get(url, headers=headers)
         data = r.json()
@@ -117,7 +135,7 @@ def pexels_fetch(query):
 
 def pixabay_fetch(query):
     try:
-        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&category=backgrounds&safesearch=true&editors_choice=true&per_page=10"
+        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&category=backgrounds&safesearch=true&editors_choice=true&per_page=30"
         r = requests.get(url)
         data = r.json()
         return [item["largeImageURL"] for item in data.get("hits", []) if not item.get("userImageURL") and "face" not in item.get("tags", "").lower()]
@@ -127,7 +145,7 @@ def pixabay_fetch(query):
 def make_square_image_from_url(url):
     try:
         response = requests.get(url)
-        if len(response.content) < 100 * 1024:  # Ignore images smaller than 100KB
+        if len(response.content) < 100 * 1024:
             return None
         img = Image.open(BytesIO(response.content)).convert("RGB")
         if img.width < 600 or img.height < 600:
@@ -144,22 +162,28 @@ def make_square_image_from_url(url):
     except:
         return None
 
-async def fetch_and_send_images(message, query):
-    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت و بدون چهره ...")
+async def fetch_and_send_images(message, query, user_id):
+    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت ...")
     imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
     random.shuffle(imgs)
-    sent = 0
+    new_imgs = []
+    seen = sent_cache.setdefault(user_id, set())
+
     for url in imgs:
+        if url in seen:
+            continue
         file = make_square_image_from_url(url)
         if file:
-            await message.answer_photo(photo=file)
-            sent += 1
-        if sent >= 3:
+            new_imgs.append(InputMediaPhoto(media=file))
+            seen.add(url)
+        if len(new_imgs) >= 10:
             break
-    if sent == 0:
-        await message.answer("متأسفم! عکسی با کیفیت مناسب پیدا نشد.")
+
+    if new_imgs:
+        await bot.send_media_group(message.chat.id, new_imgs)
+        await message.answer("✅ عکس‌ها ارسال شدند.")
     else:
-        await message.answer("✅ عکس‌ها ارسال شدند. امیدوارم خوشت بیاد!")
+        await message.answer("متأسفم! عکسی با کیفیت مناسب پیدا نشد.")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
