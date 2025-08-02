@@ -2,6 +2,8 @@ import logging
 import os
 import random
 import requests
+from PIL import Image
+from io import BytesIO
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.dispatcher.filters import CommandStart
@@ -87,9 +89,9 @@ async def choose_profile_category(message: types.Message):
     text = "یک دسته‌بندی انتخاب کن:"
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("👦 پسرانه", callback_data="cat_boy"),
-        InlineKeyboardButton("👧 دخترانه", callback_data="cat_girl"),
-        InlineKeyboardButton("🎲 تصادفی", callback_data="cat_random")
+        InlineKeyboardButton("👦 پسرانه", callback_data="men_profile_pictures"),
+        InlineKeyboardButton("👧 دخترانه", callback_data="women_profile_pictures"),
+        InlineKeyboardButton("🎲 تصادفی", callback_data="both_genders_profile_pictures")
     )
     await message.answer(text, reply_markup=keyboard)
 
@@ -143,14 +145,36 @@ def pixabay_fetch(query):
     except:
         return []
 
+def make_square_image_from_url(url):
+    try:
+        response = requests.get(url)
+        img = Image.open(BytesIO(response.content)).convert("RGB")
+        min_side = min(img.size)
+        left = (img.width - min_side) // 2
+        top = (img.height - min_side) // 2
+        right = left + min_side
+        bottom = top + min_side
+        cropped = img.crop((left, top, right, bottom))
+        output = BytesIO()
+        output.name = "profile.jpg"
+        cropped.save(output, format="JPEG")
+        output.seek(0)
+        return output
+    except:
+        return None
+
 async def fetch_and_send_images(message, query):
+    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت ...")
     imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
     if not imgs:
         await message.answer("متأسفم! عکسی پیدا نشد.")
         return
     sample = random.sample(imgs, min(3, len(imgs)))
     for url in sample:
-        await message.answer_photo(url)
+        file = make_square_image_from_url(url)
+        if file:
+            await message.answer_photo(photo=file)
+    await message.answer("✅ ارسال عکس‌ها به پایان رسید. از عکس‌ها لذت ببر!")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
