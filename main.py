@@ -81,7 +81,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "check_subscription":
-    if await is_user_member(user_id):
+        if await is_user_member(user_id):
         keyboard = [[
             InlineKeyboardButton("🖼 تبدیل متن به عکس", callback_data="text_to_image"),
             InlineKeyboardButton("🎌 تبدیل عکس به انیمه", callback_data="photo_to_anime")
