@@ -2,7 +2,7 @@ import logging
 import os
 import replicate
 import time
-import asyncio
+import nest_asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler)
 from deep_translator import GoogleTranslator
@@ -184,15 +184,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ تبدیل عکس با خطا مواجه شد. لطفاً عکس دیگری امتحان کن.")
         await start(update, context)
 
-# اجرای ربات
-async def main():
-    global app
+# اجرای ربات در محیط Railway یا async-safe
+if __name__ == '__main__':
+    nest_asyncio.apply()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    await app.run_polling()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    app.run_polling()
