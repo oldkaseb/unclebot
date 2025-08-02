@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.dispatcher.filters import CommandStart
@@ -18,6 +19,17 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 user_lang = {}
+
+# Sample image links (to replace later with real sources or APIs)
+boy_links = [
+    "https://i.pinimg.com/736x/1a/3c/f2/sample1.jpg",
+    "https://i.pinimg.com/736x/3b/6e/ab/sample2.jpg",
+]
+girl_links = [
+    "https://i.pinimg.com/736x/cc/7e/2a/sample3.jpg",
+    "https://i.pinimg.com/736x/bf/2a/d1/sample4.jpg",
+]
+random_links = boy_links + girl_links
 
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
@@ -100,8 +112,34 @@ async def static_pages(message: types.Message):
         txt = "🤖 این ربات توسط تیم راینو ساخته شده تا برای پروفایل تلگرام و شبکه‌های اجتماعی‌ات عکس‌های مربعی و جذاب فراهم کنه.\nپشتیبانی از دسته‌بندی پسرانه، دخترانه، تصادفی و موارد بیشتر در راه هست!" if lang == "fa" else "🤖 This bot is built by Team Rhino to give you stylish square profile pics for Telegram and social media.\nSupport for male, female, and random categories – more coming soon!"
         await message.answer(txt)
     elif "📞" in message.text:
-        txt = "📬 تماس با ما: @whitewolf.has5" if lang == "fa" else "📬 Contact us: @whitewolf.has5"
+        txt = "📬 تماس با ما: @oldkaseb" if lang == "fa" else "📬 Contact us: @oldkaseb"
         await message.answer(txt)
+
+@dp.message_handler(lambda msg: "پروفایل" in msg.text or "Profile" in msg.text)
+async def choose_profile_category(message: types.Message):
+    lang = user_lang.get(message.from_user.id, "en")
+    text = "دسته‌بندی پروفایل رو انتخاب کن:" if lang == "fa" else "Select a profile category:"
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("👦 پسرانه", callback_data="cat_boy"),
+        InlineKeyboardButton("👧 دخترانه", callback_data="cat_girl"),
+        InlineKeyboardButton("🎲 تصادفی", callback_data="cat_random")
+    )
+    await message.answer(text, reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data.startswith("cat_"))
+async def send_profile_image(callback: types.CallbackQuery):
+    cat = callback.data.split("_")[1]
+    if cat == "boy":
+        url = random.choice(boy_links)
+    elif cat == "girl":
+        url = random.choice(girl_links)
+    else:
+        url = random.choice(random_links)
+
+    lang = user_lang.get(callback.from_user.id, "en")
+    caption = "پروفایل انتخابی شما 👇" if lang == "fa" else "Here is your profile picture 👇"
+    await callback.message.answer_photo(url, caption=caption)
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
