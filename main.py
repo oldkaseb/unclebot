@@ -1,178 +1,169 @@
 import os
 import logging
 import replicate
-import datetime
+import nest_asyncio
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+import aiohttp
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, filters,
-    ContextTypes, CallbackQueryHandler
+    Application, CommandHandler, MessageHandler,
+    filters, CallbackQueryHandler, ContextTypes
 )
 
-# ----------
-# تنظیمات اولیه
-# ----------
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
-CHANNEL_1 = os.getenv("CHANNEL_1")
-CHANNEL_2 = os.getenv("CHANNEL_2")
-CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
-CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
-GROUP_ID = os.getenv("GROUP_ID")
-GROUP_LINK = os.getenv("GROUP_LINK")
-REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-TIME_LIMIT = int(os.getenv("TIME_LIMIT_MIN", 15))
-replicate_client = replicate.Client(api_token=REPLICATE_TOKEN)
+nest_asyncio.apply()
 logging.basicConfig(level=logging.INFO)
 
-# ----------
-# کنترل فاصله زمانی بین درخواست‌ها
-# ----------
-last_requests = {}
-def is_time_allowed(user_id):
-    now = datetime.datetime.now()
-    if user_id in last_requests:
-        delta = now - last_requests[user_id]
-        if delta.total_seconds() < TIME_LIMIT * 60:
-            return False
-    last_requests[user_id] = now
-    return True
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_1 = os.getenv("CHANNEL_1")
+CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
+CHANNEL_2 = os.getenv("CHANNEL_2")
+CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
+IMGBB_API_KEY = os.getenv("IMGBB_API_KEY")  # ⚠️ اینو باید تو Railway وارد کنی
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
-# ----------
-# بررسی عضویت در کانال‌ها
-# ----------
-async def check_membership(user_id, context):
+replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+
+def get_main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👁️ تبدیل عکس به انیمه", callback_data='anime')],
+        [InlineKeyboardButton("🖼️ تبدیل متن به عکس", callback_data='prompt')]
+    ])
+
+async def check_user_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     try:
-        for channel in [CHANNEL_1, CHANNEL_2]:
-            member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
-            if member.status not in ["member", "administrator", "creator"]:
-                return False
-        return True
+        chat1 = await context.bot.get_chat_member(CHANNEL_1, user_id)
+        chat2 = await context.bot.get_chat_member(CHANNEL_2, user_id)
+        valid_status = {"member", "administrator", "creator"}
+        return chat1.status in valid_status and chat2.status in valid_status
     except:
         return False
 
-# ----------
-# هندلر /start
-# ----------
-async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private": return
-    user_id = update.effective_user.id
-    if not await check_membership(user_id, context):
-        keyboard = [[InlineKeyboardButton("عضویت در کانال اول", url=CHANNEL_1_LINK)],
-                    [InlineKeyboardButton("عضویت در کانال دوم", url=CHANNEL_2_LINK)],
-                    [InlineKeyboardButton("عضو شدم ✅", callback_data="check_join")]]
-        await update.message.reply_text("🔒 برای استفاده از ربات، ابتدا در کانال‌ها عضو شوید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-    keyboard = [[InlineKeyboardButton("🎭 تبدیل عکس به انیمه", callback_data="anime")],
-                [InlineKeyboardButton("🖼️ تبدیل متن به عکس", callback_data="prompt")]]
-    await update.message.reply_text("به ربات عمو عکسی خوش آمدی! یکی از گزینه‌های زیر را انتخاب کن:", reply_markup=InlineKeyboardMarkup(keyboard))
+async def upload_to_imgbb(image_bytes):
+    async with aiohttp.ClientSession() as session:
+        data = {
+            "key": IMGBB_API_KEY,
+            "image": image_bytes.hex()
+        }
+        async with session.post("https://api.imgbb.com/1/upload", data=data) as resp:
+            result = await resp.json()
+            return result.get("data", {}).get("url")
 
-# ----------
-# بررسی عضویت دوباره
-# ----------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    user_id = update.effective_user.id
+    if not await check_user_membership(user_id, context):
+        keyboard = [
+            [InlineKeyboardButton("عضویت در کانال ۱", url=CHANNEL_1_LINK)],
+            [InlineKeyboardButton("عضویت در کانال ۲", url=CHANNEL_2_LINK)],
+            [InlineKeyboardButton("عضو شدم ✅", callback_data="check_join")]
+        ]
+        await update.message.reply_text("برای استفاده از ربات لطفاً ابتدا در کانال‌ها عضو شو:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    context.user_data["state"] = None
+    await update.message.reply_text("به ربات خوش آمدی! از منو انتخاب کن:", reply_markup=get_main_menu())
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+
     if query.data == "check_join":
-        if await check_membership(user_id, context):
-            await start_handler(update, context)
+        if await check_user_membership(user_id, context):
+            await query.edit_message_text("✅ عضویت تأیید شد! حالا از منو گزینه‌ای رو انتخاب کن:", reply_markup=get_main_menu())
         else:
-            await query.edit_message_text("هنوز عضو نشدی! لطفاً بعد از عضویت دکمه 'عضو شدم' رو بزن.")
+            await query.edit_message_text("❌ هنوز عضو نشدی. لطفاً عضو شو و دوباره امتحان کن.")
     elif query.data == "anime":
-        context.user_data["mode"] = "anime"
-        await query.edit_message_text("📸 لطفاً عکس موردنظر را ارسال کنید:")
+        context.user_data["state"] = "anime"
+        await query.message.reply_text("📸 لطفاً تصویرت رو بفرست:")
     elif query.data == "prompt":
-        context.user_data["mode"] = "prompt"
-        await query.edit_message_text("💬 لطفاً پرامپت (توضیح تصویری) خود را وارد کنید:")
+        context.user_data["state"] = "prompt"
+        await query.message.reply_text("📝 لطفاً توضیحت رو برای تولید تصویر وارد کن:")
 
-# ----------
-# پیام متنی برای تبدیل پرامپت
-# ----------
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private": return
-    user_id = update.effective_user.id
-    if not await check_membership(user_id, context): return
-    mode = context.user_data.get("mode")
-    if mode == "prompt":
-        if not is_time_allowed(user_id):
-            await update.message.reply_text(f"⏳ لطفاً {TIME_LIMIT} دقیقه صبر کن و دوباره تلاش کن.")
-            return
-        prompt = update.message.text
-        await update.message.reply_text("⏳ در حال تولید تصویر...")
-        try:
-            output = replicate_client.run(
-                "stability-ai/stable-diffusion",
-                input={"prompt": prompt}
-            )
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    if context.user_data.get("state") != "anime":
+        return
+
+    await update.message.reply_text("📤 در حال آپلود تصویر...")
+
+    photo_file = await update.message.photo[-1].get_file()
+    image_bytes = await photo_file.download_as_bytearray()
+    public_url = await upload_to_imgbb(image_bytes)
+
+    if not public_url:
+        await update.message.reply_text("❌ مشکلی در آپلود تصویر بود.")
+        return
+
+    await update.message.reply_text("🎨 در حال تبدیل به انیمه...")
+
+    try:
+        output = await asyncio.to_thread(replicate_client.run,
+            "laksjd/animegan-v2:d5918e02b7353e92b293e38f5584dc86b62b978089f8f6e9f5ef16b7074c35d7",
+            input={"image": public_url}
+        )
+        if isinstance(output, list) and output:
             await update.message.reply_photo(photo=output[0])
-        except:
-            await update.message.reply_text("❌ مشکلی در تولید تصویر به‌وجود آمد. لطفاً تلاش کن.")
+        else:
+            await update.message.reply_text("❌ تبدیل موفق نبود. دوباره تلاش کن.")
+    except Exception as e:
+        logging.error(f"خطا در تبدیل: {e}")
+        await update.message.reply_text("❌ خطایی رخ داد. لطفاً تصویر دیگه‌ای امتحان کن.")
 
-# ----------
-# دریافت عکس و تبدیل به انیمه
-# ----------
-async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private": return
-    user_id = update.effective_user.id
-    if not await check_membership(user_id, context): return
-    mode = context.user_data.get("mode")
-    if mode == "anime":
-        if not is_time_allowed(user_id):
-            await update.message.reply_text(f"⏳ لطفاً {TIME_LIMIT} دقیقه صبر کن و دوباره تلاش کن.")
-            return
-        await update.message.reply_text("🎨 در حال تبدیل عکس به انیمه...")
-        photo = update.message.photo[-1]
-        file = await photo.get_file()
-        path = await file.download_to_drive()
-        try:
-            output = replicate_client.run(
-                "cjwbw/animegan2",
-                input={"image": open(path, "rb")}
-            )
-            await update.message.reply_photo(photo=output)
-        except:
-            await update.message.reply_text("❌ تبدیل عکس با خطا مواجه شد. لطفاً عکس دیگری امتحان کن.")
-        await context.bot.send_photo(chat_id=ADMIN_ID, photo=open(path, "rb"), caption=f"کاربر: {user_id}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("بلاک", callback_data=f"block_{user_id}")]]))
+async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    if context.user_data.get("state") != "prompt":
+        return
 
-# ----------
-# بلاک کردن کاربران توسط ادمین
-# ----------
-blocked_users = set()
-async def admin_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.data.startswith("block_"):
-        uid = int(query.data.split("_")[1])
-        blocked_users.add(uid)
-        await query.edit_message_caption(caption="✅ کاربر بلاک شد.")
+    prompt = update.message.text
+    await update.message.reply_text("🧠 در حال تولید تصویر...")
 
-# ----------
-# کامندهای کمکی
-# ----------
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 برای شروع، از دکمه‌ها استفاده کن یا دستور /start رو بزن.")
+    try:
+        output = await asyncio.to_thread(replicate_client.run,
+            "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
+            input={"prompt": prompt}
+        )
+        if isinstance(output, list) and output:
+            await update.message.reply_photo(photo=output[0])
+        else:
+            await update.message.reply_text("❌ تصویری ساخته نشد. پرامت رو عوض کن و دوباره امتحان کن.")
+    except Exception as e:
+        logging.error(f"خطا در تولید تصویر: {e}")
+        await update.message.reply_text("❌ خطایی پیش آمد. لطفاً دوباره تلاش کن.")
 
-# ----------
-# اجرای ربات
-# ----------
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("دستورها:\n/anime - تبدیل عکس به انیمه\n/prompt - تولید عکس از توضیح\n/start - منوی اصلی")
+
+async def prompt_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["state"] = "prompt"
+    await update.message.reply_text("📝 لطفاً توضیح تصویری‌ت رو وارد کن:")
+
+async def anime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["state"] = "anime"
+    await update.message.reply_text("📸 لطفاً تصویر موردنظرت رو ارسال کن:")
+
 async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))
-    app.add_handler(CommandHandler("prompt", message_handler))
-    app.add_handler(CommandHandler("anime", photo_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("prompt", prompt_command))
+    app.add_handler(CommandHandler("anime", anime_command))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(CallbackQueryHandler(admin_block))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
+
     await app.run_polling(close_loop=False)
 
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "already running" in str(e):
-            loop = asyncio.get_event_loop()
-            loop.create_task(main())
-            loop.run_forever()
+# اجرای مطمئن در Railway یا محیط‌های دارای event loop
+try:
+    asyncio.get_event_loop().run_until_complete(main())
+except RuntimeError as e:
+    if str(e).startswith("This event loop is already running"):
+        import threading
+        threading.Thread(target=lambda: asyncio.run(main())).start()
+    else:
+        raise
