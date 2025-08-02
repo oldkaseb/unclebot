@@ -1,6 +1,8 @@
 import logging
 import os
 import random
+import requests
+from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.dispatcher.filters import CommandStart
@@ -19,17 +21,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
 user_lang = {}
-
-# Sample image links (to replace later with real sources or APIs)
-boy_links = [
-    "https://i.pinimg.com/736x/1a/3c/f2/sample1.jpg",
-    "https://i.pinimg.com/736x/3b/6e/ab/sample2.jpg",
-]
-girl_links = [
-    "https://i.pinimg.com/736x/cc/7e/2a/sample3.jpg",
-    "https://i.pinimg.com/736x/bf/2a/d1/sample4.jpg",
-]
-random_links = boy_links + girl_links
 
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
@@ -89,9 +80,10 @@ async def show_main_menu(message):
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
         KeyboardButton("📷 انتخاب پروفایل / Choose Profile"),
-        KeyboardButton("ℹ️ درباره / About"),
-        KeyboardButton("❓ راهنما / Help")
+        KeyboardButton("🔍 جستجو / Search"),
+        KeyboardButton("ℹ️ درباره / About")
     ).add(
+        KeyboardButton("❓ راهنما / Help"),
         KeyboardButton("🗣 تغییر زبان / Language"),
         KeyboardButton("📞 ارتباط با سازنده / Contact")
     )
@@ -106,10 +98,10 @@ async def change_lang(message: types.Message):
 async def static_pages(message: types.Message):
     lang = user_lang.get(message.from_user.id, "en")
     if "❓" in message.text:
-        txt = "📘 راهنمای استفاده از ربات:\n1. ابتدا زبان و عضویت را کامل کن\n2. روی \"انتخاب پروفایل\" بزن\n3. دسته‌بندی عکس رو انتخاب کن\n4. پروفایل‌ت رو دریافت کن!" if lang == "fa" else "📘 How to use the bot:\n1. Choose your language and join channels\n2. Tap 'Choose Profile'\n3. Select category\n4. Receive your profile pic!"
+        txt = "📘 راهنمای استفاده از ربات:\n1. ابتدا زبان و عضویت را کامل کن\n2. روی \"انتخاب پروفایل\" یا \"جستجو\" بزن\n3. دسته‌بندی یا موضوع رو انتخاب کن\n4. پروفایل‌ت رو دریافت کن!" if lang == "fa" else "📘 How to use the bot:\n1. Choose your language and join channels\n2. Tap 'Choose Profile' or 'Search'\n3. Select category or enter your keyword\n4. Receive your profile pic!"
         await message.answer(txt)
     elif "ℹ️" in message.text:
-        txt = "🤖 این ربات توسط تیم راینو ساخته شده تا برای پروفایل تلگرام و شبکه‌های اجتماعی‌ات عکس‌های مربعی و جذاب فراهم کنه.\nپشتیبانی از دسته‌بندی پسرانه، دخترانه، تصادفی و موارد بیشتر در راه هست!" if lang == "fa" else "🤖 This bot is built by Team Rhino to give you stylish square profile pics for Telegram and social media.\nSupport for male, female, and random categories – more coming soon!"
+        txt = "🤖 این ربات توسط تیم راینو ساخته شده تا برای پروفایل تلگرام و شبکه‌های اجتماعی‌ات عکس‌های مربعی و جذاب فراهم کنه.\nمی‌تونی بر اساس دسته‌بندی یا کلمات دلخواه جستجو کنی!" if lang == "fa" else "🤖 This bot is built by Team Rhino to give you stylish square profile pics for Telegram and social media.\nYou can search by category or keywords!"
         await message.answer(txt)
     elif "📞" in message.text:
         txt = "📬 تماس با ما: @oldkaseb" if lang == "fa" else "📬 Contact us: @oldkaseb"
@@ -118,7 +110,7 @@ async def static_pages(message: types.Message):
 @dp.message_handler(lambda msg: "پروفایل" in msg.text or "Profile" in msg.text)
 async def choose_profile_category(message: types.Message):
     lang = user_lang.get(message.from_user.id, "en")
-    text = "دسته‌بندی پروفایل رو انتخاب کن:" if lang == "fa" else "Select a profile category:"
+    text = "یک دسته‌بندی انتخاب کن:" if lang == "fa" else "Choose a category:"
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         InlineKeyboardButton("👦 پسرانه", callback_data="cat_boy"),
@@ -128,18 +120,44 @@ async def choose_profile_category(message: types.Message):
     await message.answer(text, reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("cat_"))
-async def send_profile_image(callback: types.CallbackQuery):
-    cat = callback.data.split("_")[1]
-    if cat == "boy":
-        url = random.choice(boy_links)
-    elif cat == "girl":
-        url = random.choice(girl_links)
+async def send_category_based_image(callback: types.CallbackQuery):
+    category = callback.data.split("_")[1]
+    if category == "boy":
+        query = "boy aesthetic profile"
+    elif category == "girl":
+        query = "girl aesthetic profile"
     else:
-        url = random.choice(random_links)
+        query = random.choice(["aesthetic boy", "cute girl profile", "dark pfp"])
 
-    lang = user_lang.get(callback.from_user.id, "en")
-    caption = "پروفایل انتخابی شما 👇" if lang == "fa" else "Here is your profile picture 👇"
-    await callback.message.answer_photo(url, caption=caption)
+    await fetch_and_send_images(callback.message, query)
+
+@dp.message_handler(lambda msg: "جستجو" in msg.text or "Search" in msg.text)
+async def ask_for_keyword(message: types.Message):
+    lang = user_lang.get(message.from_user.id, "en")
+    txt = "کلمه یا موضوع پروفایل رو بنویس (مثلاً: دختر هنری)" if lang == "fa" else "Send me a keyword to search profile pics (e.g. dark anime boy)"
+    await message.answer(txt)
+
+@dp.message_handler(content_types=types.ContentType.TEXT)
+async def handle_keyword_search(message: types.Message):
+    if message.text.lower().startswith("/"):
+        return  # skip commands
+    await fetch_and_send_images(message, message.text)
+
+async def fetch_and_send_images(message, keyword):
+    lang = user_lang.get(message.from_user.id, "en")
+    search_url = f"https://www.pinterest.com/search/pins/?q={keyword.replace(' ', '%20')}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    r = requests.get(search_url, headers=headers)
+    soup = BeautifulSoup(r.text, "html.parser")
+    img_tags = soup.find_all("img")
+    img_links = [img["src"] for img in img_tags if "236x" in img.get("src", "")]
+    if not img_links:
+        txt = "متأسفم! عکسی پیدا نشد." if lang == "fa" else "Sorry! No images found."
+        await message.answer(txt)
+        return
+    selected = random.sample(img_links, min(3, len(img_links)))
+    for img in selected:
+        await message.answer_photo(img)
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
