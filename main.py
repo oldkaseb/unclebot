@@ -131,14 +131,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ در حال تولید تصویر...")
     try:
         output = replicate.run(
-            "stability-ai/stable-diffusion",
+            "stability-ai/sdxl",
             input={"prompt": translated}
         )
         await msg.delete()
         await update.message.reply_photo(output[0])
         user_last_request_time[user_id] = now
     except Exception as e:
-        logger.error(e)
+        import traceback
+        print(traceback.format_exc())
         await msg.edit_text("❌ مشکلی در تولید تصویر به‌وجود آمد. لطفاً بعداً تلاش کن.")
 
 # هندل عکس ارسالی
@@ -169,14 +170,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_url = file.file_path
 
         output = replicate.run(
-            "laksjd/animegan-v2:d5918e02b7353e92b293e38f5584dc86b62b978089f8f6e9f5ef16b7074c35d7",
+            "tstramer/animegan",
             input={"image": image_url}
         )
         await msg.delete()
         await update.message.reply_photo(output)
         user_last_request_time[user_id] = now
     except Exception as e:
-        logger.error(e)
+        import traceback
+        print(traceback.format_exc())
         await msg.edit_text("❌ تبدیل عکس با خطا مواجه شد. لطفاً عکس دیگری امتحان کن.")
 
 # اجرای ربات
