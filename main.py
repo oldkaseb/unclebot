@@ -38,7 +38,7 @@ async def show_subscription_check(message):
         InlineKeyboardButton("کانال 1", url=CHANNEL_1_LINK),
         InlineKeyboardButton("کانال 2", url=CHANNEL_2_LINK),
         InlineKeyboardButton("✅ عضو شدم", callback_data="check_subs"),
-        InlineKeyboardButton("💬 گروه چت سازنده", url=GROUP_LINK)
+        InlineKeyboardButton("گروه چت اسپانسر", url=GROUP_LINK)
     )
     await message.answer(text, reply_markup=keyboard)
 
@@ -84,7 +84,7 @@ async def suggest_keywords(message: types.Message):
     keyboard = InlineKeyboardMarkup(row_width=4)
     for i in range(1, 81):
         keyboard.insert(InlineKeyboardButton(str(i), callback_data=f"q_{i}"))
-    await message.answer("🔢 یکی از گزینه‌های پیشنهادی رو انتخاب کن:", reply_markup=keyboard)
+    await message.answer("🔢 یکی از گزینه‌های پیشنهادی رو انتخاب کن یا متن مورد نظرتو تایپ کن:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("q_"))
 async def handle_suggested_query(callback: types.CallbackQuery):
