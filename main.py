@@ -24,15 +24,11 @@ PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-user_lang = {}
-
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
-    user_id = message.from_user.id
-    user_lang[user_id] = "fa"
-    await show_subscription_check(message, user_id)
+    await show_subscription_check(message)
 
-async def show_subscription_check(message, user_id):
+async def show_subscription_check(message):
     text = "لطفاً ابتدا در کانال‌های زیر عضو شوید ⬇️"
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
@@ -75,51 +71,70 @@ async def show_main_menu(message):
 @dp.message_handler(lambda msg: msg.text.startswith("❓") or msg.text.startswith("ℹ️") or msg.text.startswith("📞"))
 async def static_pages(message: types.Message):
     if "❓" in message.text:
-        txt = "📘 راهنمای استفاده از ربات:\n1. ابتدا در کانال‌ها عضو شو\n2. روی \"انتخاب پروفایل\" یا \"جستجو\" بزن\n3. دسته‌بندی یا موضوع رو انتخاب کن\n4. پروفایل‌ت رو دریافت کن!"
-        await message.answer(txt)
+        await message.answer("📘 راهنمای استفاده از ربات:\n1. ابتدا در کانال‌ها عضو شو\n2. روی \"انتخاب پروفایل\" یا \"جستجو\" بزن\n3. دسته‌بندی یا موضوع رو انتخاب کن\n4. پروفایل‌ت رو دریافت کن!")
     elif "ℹ️" in message.text:
-        txt = "🤖 این ربات توسط تیم راینو ساخته شده تا برای پروفایل تلگرام و شبکه‌های اجتماعی‌ات عکس‌های مربعی و جذاب فراهم کنه.\nمی‌تونی بر اساس دسته‌بندی یا کلمات دلخواه جستجو کنی!"
-        await message.answer(txt)
+        await message.answer("🤖 این ربات توسط تیم راینو ساخته شده تا برای پروفایل تلگرام عکس‌های جذاب و مربعی فراهم کنه. بدون چهره، با کیفیت بالا، در سبک‌های متنوع!")
     elif "📞" in message.text:
-        txt = "📬 تماس با ما: @oldkaseb"
-        await message.answer(txt)
+        await message.answer("📬 تماس با ما: @oldkaseb")
 
 @dp.message_handler(lambda msg: "پروفایل" in msg.text)
 async def choose_profile_category(message: types.Message):
-    text = "یک دسته‌بندی انتخاب کن:"
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton("👦 پسرانه", callback_data="men_profile_pictures"),
-        InlineKeyboardButton("👧 دخترانه", callback_data="women_profile_pictures"),
-        InlineKeyboardButton("🎲 تصادفی", callback_data="both_genders_profile_pictures")
+        InlineKeyboardButton("👦 پسرانه", callback_data="cat_boy"),
+        InlineKeyboardButton("👧 دخترانه", callback_data="cat_girl"),
+        InlineKeyboardButton("🎲 تصادفی", callback_data="cat_random")
     )
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer("یک دسته‌بندی انتخاب کن:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith("cat_"))
 async def send_category_based_image(callback: types.CallbackQuery):
     category = callback.data.split("_")[1]
     if category == "boy":
-        query = "boy profile aesthetic"
+        query = "dark aesthetic male faceless profile background"
     elif category == "girl":
-        query = "girl profile aesthetic"
+        query = "dreamy girl faceless aesthetic profile background"
     else:
-        query = random.choice(["dark pfp", "anime pfp", "minimal profile"])
+        query = random.choice([
+            "minimal abstract profile background",
+            "anime faceless aesthetic",
+            "soft color faceless pfp"
+        ])
     await fetch_and_send_images(callback.message, query)
 
 @dp.message_handler(lambda msg: "جستجو" in msg.text)
 async def ask_for_keyword(message: types.Message):
-    txt = "کلمه یا موضوع پروفایل رو بنویس (مثلاً: دختر هنری)"
-    await message.answer(txt)
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("🌌 استایل تیره بدون چهره", callback_data="q_dark"),
+        InlineKeyboardButton("🧚‍♀️ دختر فانتزی پشت به دوربین", callback_data="q_fantasy"),
+        InlineKeyboardButton("🎴 انیمه مینیمال", callback_data="q_anime"),
+        InlineKeyboardButton("🌀 مینیمال هنری", callback_data="q_minimal"),
+        InlineKeyboardButton("🎨 ترکیب رنگی آرام", callback_data="q_soft")
+    )
+    await message.answer("یا انتخاب کن، یا خودت بنویس:", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data.startswith("q_"))
+async def handle_suggested_query(callback: types.CallbackQuery):
+    mapping = {
+        "q_dark": "dark aesthetic faceless profile",
+        "q_fantasy": "fantasy girl back silhouette",
+        "q_anime": "faceless anime aesthetic pfp",
+        "q_minimal": "minimal abstract aesthetic profile",
+        "q_soft": "soft pastel background faceless"
+    }
+    query = mapping.get(callback.data, "faceless profile")
+    await fetch_and_send_images(callback.message, query)
 
 @dp.message_handler(content_types=types.ContentType.TEXT)
-async def handle_keyword_search(message: types.Message):
+async def handle_custom_query(message: types.Message):
     if message.text.lower().startswith("/"):
         return
     await fetch_and_send_images(message, message.text)
 
 def unsplash_fetch(query):
     try:
-        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=5&client_id={UNSPLASH_KEY}"
+        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=5&orientation=squarish&content_filter=high&client_id={UNSPLASH_KEY}"
         r = requests.get(url)
         data = r.json()
         return [item["urls"]["regular"] for item in data.get("results", [])]
@@ -132,16 +147,16 @@ def pexels_fetch(query):
         headers = {"Authorization": PEXELS_KEY}
         r = requests.get(url, headers=headers)
         data = r.json()
-        return [item["src"]["medium"] for item in data.get("photos", [])]
+        return [item["src"]["medium"] for item in data.get("photos", []) if "face" not in item.get("alt", "").lower()]
     except:
         return []
 
 def pixabay_fetch(query):
     try:
-        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&per_page=5"
+        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&category=backgrounds&safesearch=true&editors_choice=true&per_page=5"
         r = requests.get(url)
         data = r.json()
-        return [item["largeImageURL"] for item in data.get("hits", [])]
+        return [item["largeImageURL"] for item in data.get("hits", []) if not item.get("userImageURL")]
     except:
         return []
 
@@ -164,7 +179,7 @@ def make_square_image_from_url(url):
         return None
 
 async def fetch_and_send_images(message, query):
-    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت ...")
+    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت و بدون چهره ...")
     imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
     if not imgs:
         await message.answer("متأسفم! عکسی پیدا نشد.")
