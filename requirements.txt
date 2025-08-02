@@ -1,6 +1,4 @@
-python-telegram-bot==20.6
-openai
-httpx
-Pillow
-aiofiles
-nest_asyncio
+aiogram==2.25.2
+aiohttp==3.9.5
+requests==2.31.0
+Pillow==10.2.0
