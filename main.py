@@ -118,15 +118,15 @@ async def suggest_options(message: types.Message):
 async def show_custom_suggestions(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(row_width=2)
     suggestions = [
-    ("پسرونه", "badboy aesthetic"),
-    ("مردونه", "badman aesthetic"),
-    ("دخترونه", "badgirl aesthetic"),
-    ("دارک", "dark person profile high quality"),
-    ("غیرطبیعی", "unnormal profile pic"),
-    ("ماشین", "luxury car aesthetic"),
-    ("شخصیت انیمه", "anime character"),
-    ("شخصیت کارتونی", "cartoon character")
-]
+        ("پسرونه", "badboy aesthetic"),
+        ("مردونه", "badman aesthetic"),
+        ("دخترونه", "badgirl aesthetic"),
+        ("دارک", "dark person profile high quality"),
+        ("غیرطبیعی", "unnormal profile pic"),
+        ("ماشین", "luxury car aesthetic"),
+        ("شخصیت انیمه", "anime character"),
+        ("شخصیت کارتونی", "cartoon character")
+    ]
     for label, query in suggestions:
         keyboard.insert(InlineKeyboardButton(label, callback_data=f"q_{query}"))
     await callback.message.answer("یکی از گزینه‌های پیشنهادی رو انتخاب کن عمو:", reply_markup=keyboard)
@@ -239,5 +239,12 @@ async def fetch_and_send_images(message, query, user_id):
     else:
         await message.answer("چیز به درد بخوری پیدا نکردم عمو")
 
+# ✅ اضافه‌شده برای حذف Webhook و رفع خطای getUpdates
+import asyncio
+from aiogram import executor
+
+async def on_startup(dp):
+    await bot.delete_webhook(drop_pending_updates=True)
+
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
