@@ -2,6 +2,8 @@ import logging
 import os
 import random
 import requests
+import json
+from datetime import datetime
 from PIL import Image
 from io import BytesIO
 from aiogram import Bot, Dispatcher, executor, types
@@ -13,8 +15,10 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_1 = os.getenv("CHANNEL_1")
 CHANNEL_2 = os.getenv("CHANNEL_2")
+CHANNEL_3 = os.getenv("CHANNEL_3")
 CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
+CHANNEL_3_LINK = os.getenv("CHANNEL_3_LINK")
 GROUP_LINK = os.getenv("GROUP_LINK")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
@@ -24,22 +28,43 @@ PIXABAY_KEY = os.getenv("PIXABAY_API_KEY")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-sent_cache = {}  # user_id: set of image URLs
+sent_cache = {}
+USERS_FILE = "users.json"
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+users = load_users()
 
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
+    user_id = str(message.from_user.id)
+    if user_id not in users:
+        users[user_id] = {
+            "name": message.from_user.full_name,
+            "username": message.from_user.username,
+            "joined_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        save_users(users)
     sent_cache[message.from_user.id] = set()
     await show_subscription_check(message)
 
 async def show_subscription_check(message):
-    text = "لطفاً ابتدا در کانال‌های زیر عضو شوید ⬇️"
+    text = "اول تو کانالا عضو شو عمو جون"
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        InlineKeyboardButton("کانال 1", url=CHANNEL_1_LINK),
-        InlineKeyboardButton("کانال 2", url=CHANNEL_2_LINK),
-        InlineKeyboardButton("کانال 3", url=CHANNEL_3_LINK),
-        InlineKeyboardButton("گروه چت اسپانسر", url=GROUP_LINK),
-        InlineKeyboardButton("✅ عضو شدم", callback_data="check_subs")
+        InlineKeyboardButton("کانال دکتر گشاد", url=CHANNEL_1_LINK),
+        InlineKeyboardButton("کانال تیم", url=CHANNEL_2_LINK),
+        InlineKeyboardButton("کانال عکس و بیو", url=CHANNEL_3_LINK),
+        InlineKeyboardButton("گروه بچه ها (عضویت اختیاری)", url=GROUP_LINK),
+        InlineKeyboardButton("عضو شدم عمو جون", callback_data="check_subs")
     )
     await message.answer(text, reply_markup=keyboard)
 
@@ -54,61 +79,61 @@ async def check_subscription(callback: types.CallbackQuery):
         except:
             return False
 
-    if await is_member(CHANNEL_1) and await is_member(CHANNEL_2):
+    if await is_member(CHANNEL_1) and await is_member(CHANNEL_2) and await is_member(CHANNEL_3):
         await show_main_menu(callback.message)
     else:
-        await callback.answer("عضویت کامل نیست ❌", show_alert=True)
+        await callback.answer("عضویت کامل نیست عمو جون لطفا عضو شو.", show_alert=True)
 
 async def show_main_menu(message):
-    text = "به ربات عمو عکسی خوش آمدی! فقط جستجو کن یا یکی از گزینه‌های پیشنهادی رو بزن."
+    text = "به ربات عمو عکسی خوش اومدی بریم با هم دنبال عکس با متنی که میدی بگردیم یا از پیشنهادا استفاده کن"
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
-        KeyboardButton("🔍 جستجو"),
-        KeyboardButton("ℹ️ درباره"),
-        KeyboardButton("❓ راهنما")
+        KeyboardButton("جستجو"),
+        KeyboardButton("درباره من"),
+        KeyboardButton("راهنما")
     ).add(
-        KeyboardButton("📞 ارتباط با سازنده")
+        KeyboardButton("تماس با مالک عمو عکسی")
     )
     await message.answer(text, reply_markup=keyboard)
 
-@dp.message_handler(lambda msg: msg.text.startswith("❓") or msg.text.startswith("ℹ️") or msg.text.startswith("📞"))
+@dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
 async def static_pages(message: types.Message):
-    if "❓" in message.text:
-        await message.answer("📘 فقط کلمه‌ای مثل 'دختر انیمه' یا 'پروفایل تاریک' تایپ کن یا یکی از پیشنهادها رو بزن.")
-    elif "ℹ️" in message.text:
-        await message.answer("🤖 ربات عمو عکسی توسط تیم SOULS ساخته شده برای ارسال عکس‌های با کیفیت و مناسب پروفایل.")
-    elif "📞" in message.text:
-        await message.answer("📬 تماس با ما: @oldkaseb")
+    if "راهنما" in message.text:
+        await message.answer("برای دریافت عکس فقط یه کلمه مثل 'پروفایل دارک' بنویس یا از پیشنهادها استفاده کن.")
+    elif "درباره" in message.text:
+        await message.answer("عمو عکسی رو تیم SOULS ساخته برای راحت تر کردن سرچ عکس ها")
+    elif "تماس" in message.text:
+        await message.answer("با مالک عمو عکسی حرف بزن: @oldkaseb")
 
 @dp.message_handler(lambda msg: "جستجو" in msg.text)
 async def suggest_options(message: types.Message):
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        InlineKeyboardButton("🔢 پیشنهادها", callback_data="show_suggestions"),
-        InlineKeyboardButton("📝 جستجوی متنی", callback_data="text_search")
+        InlineKeyboardButton("پیشنهادها", callback_data="show_suggestions"),
+        InlineKeyboardButton("جستجوی دلخواه", callback_data="text_search")
     )
-    await message.answer("🔍 نوع جستجو رو انتخاب کن:", reply_markup=keyboard)
+    await message.answer("می‌خوای از پیشنهادها استفاده کنی یا خودت بنویسی؟", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data == "show_suggestions")
 async def show_custom_suggestions(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(row_width=2)
     suggestions = [
-        ("🧑‍💼 پروفایل پسرونه", "پروفایل پسرونه"),
-        ("👨 پروفایل مردونه", "پروفایل مردونه"),
-        ("👧 پروفایل دخترونه", "پروفایل دخترونه"),
-        ("🌑 پروفایل دارک", "پروفایل دارک"),
-        ("🌀 پروفایل ماورایی", "پروفایل ماورایی"),
-        ("🚗 پروفایل ماشین", "پروفایل ماشین"),
-        ("🧍‍♂️ شخصیت سه بعدی", "پروفایل شخصیت سه بعدی"),
-        ("🎭 شخصیت کارتونی", "پروفایل شخصیت کارتونی"),
+        ("پروفایل پسرونه", "پروفایل پسرونه"),
+        ("پروفایل مردونه", "پروفایل مردونه"),
+        ("پروفایل دخترونه", "پروفایل دخترونه"),
+        ("پروفایل دارک", "پروفایل دارک"),
+        ("پروفایل ماورایی", "پروفایل ماورایی"),
+        ("پروفایل ماشین", "پروفایل ماشین"),
+        ("شخصیت سه بعدی", "پروفایل شخصیت سه بعدی"),
+        ("شخصیت کارتونی", "پروفایل شخصیت کارتونی"),
     ]
     for label, query in suggestions:
         keyboard.insert(InlineKeyboardButton(label, callback_data=f"q_{query}"))
-    await callback.message.answer("✨ یکی از گزینه‌های پیشنهادی رو انتخاب کن:", reply_markup=keyboard)
+    await callback.message.answer("یکی از گزینه‌های پیشنهادی رو انتخاب کن عمو:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data == "text_search")
 async def ask_for_custom_query(callback: types.CallbackQuery):
-    await callback.message.answer("📝 حالا عبارتی که می‌خوای جستجو کنی رو تایپ کن (مثلاً: دختر انیمه، پروفایل تاریک و ...)")
+    await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("q_"))
 async def handle_suggested_query(callback: types.CallbackQuery):
@@ -120,6 +145,13 @@ async def handle_suggested_query(callback: types.CallbackQuery):
         pass
     await show_retry_button(callback.message)
 
+@dp.message_handler(commands=["stats"])
+async def show_stats(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    total = len(users)
+    await message.answer(f"تعداد کل کاربران: {total}")
+
 @dp.message_handler(content_types=types.ContentType.TEXT)
 async def handle_custom_query(message: types.Message):
     if message.text.lower().startswith("/"):
@@ -129,8 +161,8 @@ async def handle_custom_query(message: types.Message):
 
 async def show_retry_button(message):
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("🔍 جستجوی مجدد", callback_data="again"))
-    await message.answer("می‌تونی دوباره جستجو کنی:", reply_markup=keyboard)
+    keyboard.add(InlineKeyboardButton("عمو عمو دوباره", callback_data="again"))
+    await message.answer("میخوای دوباره جستوجو کنی عمو؟", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data == "again")
 async def retry_suggestions(callback: types.CallbackQuery):
@@ -185,7 +217,7 @@ def make_square_image_from_url(url):
         return None
 
 async def fetch_and_send_images(message, query, user_id):
-    await message.answer("🔄 در حال دریافت عکس‌های با کیفیت ...")
+    await message.answer("عمو داره سرچ میکنه...")
     imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
     random.shuffle(imgs)
     new_imgs = []
@@ -203,9 +235,9 @@ async def fetch_and_send_images(message, query, user_id):
 
     if new_imgs:
         await bot.send_media_group(message.chat.id, new_imgs)
-        await message.answer("✅ عکس‌ها ارسال شدند.")
+        await message.answer("عمو برات عکس اورده")
     else:
-        await message.answer("متأسفم! عکسی با کیفیت مناسب پیدا نشد.")
+        await message.answer("چیز به درد بخوری پیدا نکردم عمو")
 
 if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
