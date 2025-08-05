@@ -37,8 +37,9 @@ async def show_subscription_check(message):
     keyboard.add(
         InlineKeyboardButton("کانال 1", url=CHANNEL_1_LINK),
         InlineKeyboardButton("کانال 2", url=CHANNEL_2_LINK),
-        InlineKeyboardButton("✅ عضو شدم", callback_data="check_subs"),
-        InlineKeyboardButton("گروه چت اسپانسر", url=GROUP_LINK)
+        InlineKeyboardButton("کانال 3", url=CHANNEL_3_LINK),
+        InlineKeyboardButton("گروه چت اسپانسر", url=GROUP_LINK),
+        InlineKeyboardButton("✅ عضو شدم", callback_data="check_subs")
     )
     await message.answer(text, reply_markup=keyboard)
 
@@ -95,7 +96,6 @@ async def show_custom_suggestions(callback: types.CallbackQuery):
         ("🧑‍💼 پروفایل پسرونه", "پروفایل پسرونه"),
         ("👨 پروفایل مردونه", "پروفایل مردونه"),
         ("👧 پروفایل دخترونه", "پروفایل دخترونه"),
-        ("👩 پروفایل ابسترکت یا انتزاعی", "پروفایل ابسترکت یا انتزاعی"),
         ("🌑 پروفایل دارک", "پروفایل دارک"),
         ("🌀 پروفایل ماورایی", "پروفایل ماورایی"),
         ("🚗 پروفایل ماشین", "پروفایل ماشین"),
