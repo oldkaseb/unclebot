@@ -103,7 +103,7 @@ async def static_pages(message: types.Message):
     elif "درباره" in message.text:
         await message.answer("عمو عکسی رو تیم SOULS ساخته برای راحت تر کردن سرچ عکس ها")
     elif "تماس" in message.text:
-        await message.answer("با مالک عمو عکسی حرف بزن: @oldkaseb")
+        await message.answer("با مالک عمو عکسی حرف بزن: @soulsownerbot")
 
 @dp.message_handler(lambda msg: "جستجو" in msg.text)
 async def suggest_options(message: types.Message):
