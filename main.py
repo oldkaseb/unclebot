@@ -118,15 +118,15 @@ async def suggest_options(message: types.Message):
 async def show_custom_suggestions(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(row_width=2)
     suggestions = [
-        ("پروفایل پسرونه", "پروفایل پسرونه"),
-        ("پروفایل مردونه", "پروفایل مردونه"),
-        ("پروفایل دخترونه", "پروفایل دخترونه"),
-        ("پروفایل دارک", "پروفایل دارک"),
-        ("پروفایل ماورایی", "پروفایل ماورایی"),
-        ("پروفایل ماشین", "پروفایل ماشین"),
-        ("شخصیت سه بعدی", "پروفایل شخصیت سه بعدی"),
-        ("شخصیت کارتونی", "پروفایل شخصیت کارتونی"),
-    ]
+    ("پسرونه", "badboy aesthetic"),
+    ("مردونه", "badman aesthetic"),
+    ("دخترونه", "badgirl aesthetic"),
+    ("دارک", "dark person profile high quality"),
+    ("غیرطبیعی", "unnormal profile pic"),
+    ("ماشین", "luxury car aesthetic"),
+    ("شخصیت انیمه", "anime character"),
+    ("شخصیت کارتونی", "cartoon character")
+]
     for label, query in suggestions:
         keyboard.insert(InlineKeyboardButton(label, callback_data=f"q_{query}"))
     await callback.message.answer("یکی از گزینه‌های پیشنهادی رو انتخاب کن عمو:", reply_markup=keyboard)
