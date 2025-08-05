@@ -59,7 +59,7 @@ async def check_subscription(callback: types.CallbackQuery):
         await callback.answer("عضویت کامل نیست ❌", show_alert=True)
 
 async def show_main_menu(message):
-    text = "به ربات عمو عکسی خوش آمدی! فقط جستجو کن یا یکی از شماره‌های پیشنهادی رو بزن."
+    text = "به ربات عمو عکسی خوش آمدی! فقط جستجو کن یا یکی از گزینه‌های پیشنهادی رو بزن."
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
         KeyboardButton("🔍 جستجو"),
@@ -73,23 +73,46 @@ async def show_main_menu(message):
 @dp.message_handler(lambda msg: msg.text.startswith("❓") or msg.text.startswith("ℹ️") or msg.text.startswith("📞"))
 async def static_pages(message: types.Message):
     if "❓" in message.text:
-        await message.answer("📘 فقط کلمه‌ای مثل 'دختر انیمه' یا 'پروفایل تاریک' تایپ کن یا یکی از شماره‌های پیشنهادی رو بزن.")
+        await message.answer("📘 فقط کلمه‌ای مثل 'دختر انیمه' یا 'پروفایل تاریک' تایپ کن یا یکی از پیشنهادها رو بزن.")
     elif "ℹ️" in message.text:
         await message.answer("🤖 ربات عمو عکسی توسط تیم راینو ساخته شده برای ارسال عکس‌های با کیفیت و مناسب پروفایل.")
     elif "📞" in message.text:
         await message.answer("📬 تماس با ما: @oldkaseb")
 
 @dp.message_handler(lambda msg: "جستجو" in msg.text)
-async def suggest_keywords(message: types.Message):
-    keyboard = InlineKeyboardMarkup(row_width=4)
-    for i in range(1, 81):
-        keyboard.insert(InlineKeyboardButton(str(i), callback_data=f"q_{i}"))
-    await message.answer("🔢 یکی از گزینه‌های پیشنهادی رو انتخاب کن یا متن مورد نظرتو تایپ کن:", reply_markup=keyboard)
+async def suggest_options(message: types.Message):
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("🔢 پیشنهادها", callback_data="show_suggestions"),
+        InlineKeyboardButton("📝 جستجوی متنی", callback_data="text_search")
+    )
+    await message.answer("🔍 نوع جستجو رو انتخاب کن:", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data == "show_suggestions")
+async def show_custom_suggestions(callback: types.CallbackQuery):
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    suggestions = [
+        ("🧑‍💼 پروفایل پسرونه", "پروفایل پسرونه"),
+        ("👨 پروفایل مردونه", "پروفایل مردونه"),
+        ("👧 پروفایل دخترونه", "پروفایل دخترونه"),
+        ("👩 پروفایل زنونه", "پروفایل زنونه"),
+        ("🌑 پروفایل دارک", "پروفایل دارک"),
+        ("🌀 پروفایل ماورایی", "پروفایل ماورایی"),
+        ("🚗 پروفایل ماشین", "پروفایل ماشین"),
+        ("🧍‍♂️ شخصیت سه بعدی", "پروفایل شخصیت سه بعدی"),
+        ("🎭 شخصیت کارتونی", "پروفایل شخصیت کارتونی"),
+    ]
+    for label, query in suggestions:
+        keyboard.insert(InlineKeyboardButton(label, callback_data=f"q_{query}"))
+    await callback.message.answer("✨ یکی از گزینه‌های پیشنهادی رو انتخاب کن:", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data == "text_search")
+async def ask_for_custom_query(callback: types.CallbackQuery):
+    await callback.message.answer("📝 حالا عبارتی که می‌خوای جستجو کنی رو تایپ کن (مثلاً: دختر انیمه، پروفایل تاریک و ...)")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("q_"))
 async def handle_suggested_query(callback: types.CallbackQuery):
-    number = callback.data[2:]
-    query = f"پروفایل شماره {number}"
+    query = callback.data[2:]
     await fetch_and_send_images(callback.message, query, callback.from_user.id)
     try:
         await callback.message.edit_reply_markup()
@@ -111,8 +134,7 @@ async def show_retry_button(message):
 
 @dp.callback_query_handler(lambda c: c.data == "again")
 async def retry_suggestions(callback: types.CallbackQuery):
-    await suggest_keywords(callback.message)
-
+    await suggest_options(callback.message)
 
 def unsplash_fetch(query):
     try:
