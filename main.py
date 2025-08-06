@@ -30,8 +30,8 @@ dp = Dispatcher(bot)
 sent_cache = {}
 USERS_FILE = "users.json"
 USED_PHOTOS_FILE = "used_photos.json"
+POSTED_FILE = "posted.json"
 
-# Load/save users
 def load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, "r") as f:
@@ -44,7 +44,6 @@ def save_users(users):
 
 users = load_users()
 
-# Load/save used photos
 def load_used_photos():
     if os.path.exists(USED_PHOTOS_FILE):
         with open(USED_PHOTOS_FILE, "r") as f:
@@ -57,7 +56,18 @@ def save_used_photos(photo_ids):
 
 used_photo_ids = load_used_photos()
 
-# Start
+def load_posted_ids():
+    if os.path.exists(POSTED_FILE):
+        with open(POSTED_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_posted_ids(posted_ids):
+    with open(POSTED_FILE, "w") as f:
+        json.dump(posted_ids, f, indent=2)
+
+posted_ids = load_posted_ids()
+
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
     user_id = str(message.from_user.id)
@@ -71,7 +81,6 @@ async def cmd_start(message: types.Message):
     sent_cache[message.from_user.id] = set()
     await show_subscription_check(message)
 
-# Check subscription
 async def show_subscription_check(message):
     text = "اول تو کانالا عضو شو عمو جون"
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -97,7 +106,6 @@ async def check_subscription(callback: types.CallbackQuery):
     else:
         await callback.answer("عضویت کامل نیست عمو جون لطفا عضو شو.", show_alert=True)
 
-# Main menu
 async def show_main_menu(message):
     text = "به ربات عمو عکسی خوش اومدی!"
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -110,7 +118,6 @@ async def show_main_menu(message):
     )
     await message.answer(text, reply_markup=keyboard)
 
-# Static info
 @dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
 async def static_pages(message: types.Message):
     if "راهنما" in message.text:
@@ -123,45 +130,32 @@ async def static_pages(message: types.Message):
 @dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
-        photos = await bot.get_chat_history(CHANNEL_3, limit=100)
-        candidates = [msg for msg in photos if msg.photo and str(msg.message_id) not in used_photo_ids]
-        
+        candidates = [msg_id for msg_id in posted_ids if str(msg_id) not in used_photo_ids]
         if not candidates:
             await message.answer("هیچ عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
             return
-
-        msg = random.choice(candidates)
-        used_photo_ids.add(str(msg.message_id))
+        msg_id = random.choice(candidates)
+        used_photo_ids.add(str(msg_id))
         save_used_photos(used_photo_ids)
-
-        await bot.copy_message(
-            chat_id=message.chat.id,
-            from_chat_id=CHANNEL_3,
-            message_id=msg.message_id
-        )
-
+        await bot.copy_message(chat_id=message.chat.id, from_chat_id=CHANNEL_3, message_id=msg_id)
         keyboard = InlineKeyboardMarkup().add(
             InlineKeyboardButton("📸 یه دونه دیگه عمو", callback_data="more_channel_photo")
         )
         await message.answer("عمو یه عکس دیگه می‌خوای؟", reply_markup=keyboard)
-
-    except Exception as e:
+    except:
         await message.answer("❌ ارسال عکس از کانال با خطا مواجه شد عمو")
-        await message.answer(f"<code>{str(e)}</code>", parse_mode="HTML")  # نمایش خطا
 
 @dp.callback_query_handler(lambda c: c.data == "more_channel_photo")
 async def handle_more_channel_photo(callback: types.CallbackQuery):
     await callback.message.delete_reply_markup()
     await send_random_channel_photo(callback.message)
 
-# Fetch image from APIs
 async def fetch_and_send_images(message, query, user_id):
     await message.answer("عمو داره سرچ میکنه...")
     imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
     random.shuffle(imgs)
     new_imgs = []
     seen = sent_cache.setdefault(user_id, set())
-
     for url in imgs:
         if url in seen:
             continue
@@ -171,7 +165,6 @@ async def fetch_and_send_images(message, query, user_id):
             seen.add(url)
         if len(new_imgs) >= 10:
             break
-
     if new_imgs:
         await bot.send_media_group(message.chat.id, new_imgs)
         await message.answer("عمو برات عکس اورده")
@@ -187,8 +180,6 @@ async def retry_search(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     sent_cache[user_id] = set()
     user_input_mode[user_id] = True
-
-# APIs
 
 def unsplash_fetch(query):
     try:
@@ -270,7 +261,6 @@ async def broadcast_command(message: types.Message):
     if not message.reply_to_message:
         await message.answer("هزار بار گفتم ریپ بزن کیرت بشکنه")
         return
-
     count = 0
     for uid in users.keys():
         try:
@@ -292,12 +282,14 @@ async def post_to_channel(message: types.Message):
         await message.answer("عمو جون ریپلای کن روی پیامی که می‌خوای بفرستم تو کانال!")
         return
     try:
-        await bot.copy_message(
+        sent = await bot.copy_message(
             chat_id=CHANNEL_3,
             from_chat_id=message.chat.id,
             message_id=message.reply_to_message.message_id
         )
-        await message.answer("✅توشه عمو!")
+        posted_ids.append(sent.message_id)
+        save_posted_ids(posted_ids)
+        await message.answer("✅ تو کانال فرستادم عمو!")
     except Exception as e:
         await message.answer(f"نشد عمو کیرت تو چرخ گوشت:\n\n`{e}`", parse_mode="Markdown")
 
@@ -308,7 +300,6 @@ async def catch_text(message: types.Message):
         await fetch_and_send_images(message, message.text, user_id)
         user_input_mode[user_id] = False
 
-# Remove webhook
 async def on_startup(dp):
     await bot.delete_webhook(drop_pending_updates=True)
 
