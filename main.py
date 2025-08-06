@@ -78,7 +78,7 @@ async def show_subscription_check(message):
     keyboard.add(
         InlineKeyboardButton("کانال دکتر گشاد", url=CHANNEL_1_LINK),
         InlineKeyboardButton("کانال تیم", url=CHANNEL_2_LINK),
-        InlineKeyboardButton("کانال عکس و بیو", url=CHANNEL_3_LINK),
+        InlineKeyboardButton("کانال خود عمو عکسی", url=CHANNEL_3_LINK),
         InlineKeyboardButton("عضو شدم عمو جون", callback_data="check_subs")
     )
     await message.answer(text, reply_markup=keyboard)
@@ -121,7 +121,7 @@ async def static_pages(message: types.Message):
         await message.answer("با مالک صحبت کن: @soulsownerbot")
 
 # Send photo from channel
-@dp.message_handler(lambda msg: msg.text == "عکس از خود عمو")
+@dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
         photos = await bot.get_chat_history(CHANNEL_3, limit=100)
@@ -172,7 +172,7 @@ async def fetch_and_send_images(message, query, user_id):
 @dp.callback_query_handler(lambda c: c.data == "retry_search")
 async def retry_search(callback: types.CallbackQuery):
     await callback.message.delete_reply_markup()
-    await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
+    await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم تایپ کن من میرم میارم")
     user_id = callback.from_user.id
     sent_cache[user_id] = set()
     user_input_mode[user_id] = True
@@ -231,7 +231,7 @@ user_input_mode = {}
 
 @dp.message_handler(lambda msg: msg.text == "جستجوی دلخواه")
 async def ask_for_custom_query_text(message: types.Message):
-    await message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
+    await message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم تایپ کن من میرم میارم")
     user_input_mode[message.from_user.id] = True
 
 @dp.message_handler(commands=["help"])
@@ -242,7 +242,8 @@ async def show_help(message: types.Message):
 /start — شروع
 /help — لیست دستورات
 /stats — آمار کاربران
-/send — پیام همگانی (با ریپلای)""")
+/send — پیام همگانی (با ریپلای)
+/post — پست کردن عکس توی کانال سوم""")
 
 @dp.message_handler(commands=["stats"])
 async def show_stats(message: types.Message):
@@ -266,6 +267,19 @@ async def broadcast_command(message: types.Message):
         except:
             pass
     await message.answer(f"پیام برای {count} نفر فرستاده شد.")
+
+@dp.message_handler(commands=["post"])
+async def post_to_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    if not message.reply_to_message:
+        await message.answer("باید ریپ بزنی کصخل نوب")
+        return
+    try:
+        await message.copy_to(chat_id=CHANNEL_3, reply_to_message_id=message.reply_to_message.message_id)
+        await message.answer("پست با موفقیت به کانال سوم ارسال شد ✅")
+    except:
+        await message.answer("ارسال پست به کانال سوم با خطا مواجه شد ❌")
 
 @dp.message_handler()
 async def catch_text(message: types.Message):
