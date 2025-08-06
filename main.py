@@ -63,7 +63,7 @@ async def show_subscription_check(message):
     keyboard.add(
         InlineKeyboardButton("کانال دکتر گشاد", url=CHANNEL_1_LINK),
         InlineKeyboardButton("کانال تیم", url=CHANNEL_2_LINK),
-        InlineKeyboardButton("کانال عکس و بیو", url=CHANNEL_3_LINK),
+        InlineKeyboardButton("کانال عمو عکسی", url=CHANNEL_3_LINK),
         InlineKeyboardButton("عضو شدم عمو جون", callback_data="check_subs")
     )
     await message.answer("اول تو کانالا عضو شو عمو جون", reply_markup=keyboard)
