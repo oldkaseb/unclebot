@@ -114,7 +114,7 @@ async def show_main_menu(message):
 @dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
 async def static_pages(message: types.Message):
     if "راهنما" in message.text:
-        await message.answer("برای دریافت عکس فقط یه کلمه بنویس یا از خود کانال عمو عکسی یه عکس بگیر")
+        await message.answer("برای دریافت عکس میتونی با متن دلخواه سرچ کنی یا از خود کانال عمو عکسی یه عکس بگیری")
     elif "درباره" in message.text:
         await message.answer("عمو عکسی رو تیم SOULS ساخته")
     elif "تماس" in message.text:
@@ -273,13 +273,17 @@ async def post_to_channel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     if not message.reply_to_message:
-        await message.answer("باید ریپ بزنی کصخل نوب")
+        await message.answer("عمو جون ریپلای کن روی پیامی که می‌خوای بفرستم تو کانال!")
         return
     try:
-        await message.copy_to(chat_id=CHANNEL_3, reply_to_message_id=message.reply_to_message.message_id)
-        await message.answer("پست با موفقیت به کانال سوم ارسال شد ✅")
-    except:
-        await message.answer("ارسال پست به کانال سوم با خطا مواجه شد ❌")
+        await bot.copy_message(
+            chat_id=CHANNEL_3,
+            from_chat_id=message.chat.id,
+            message_id=message.reply_to_message.message_id
+        )
+        await message.answer("✅توشه عمو!")
+    except Exception as e:
+        await message.answer(f"نشد عمو کیرت تو چرخ گوشت:\n\n`{e}`", parse_mode="Markdown")
 
 @dp.message_handler()
 async def catch_text(message: types.Message):
