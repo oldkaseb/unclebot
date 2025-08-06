@@ -30,6 +30,16 @@ dp = Dispatcher(bot)
 
 sent_cache = {}
 USERS_FILE = "users.json"
+USED_CHANNEL_PHOTOS_FILE = "used_channel_photos.json"
+
+used_channel_photos = set()
+if os.path.exists(USED_CHANNEL_PHOTOS_FILE):
+    with open(USED_CHANNEL_PHOTOS_FILE, "r") as f:
+        used_channel_photos = set(json.load(f))
+
+def save_used_photos():
+    with open(USED_CHANNEL_PHOTOS_FILE, "w") as f:
+        json.dump(list(used_channel_photos), f)
 
 def load_users():
     if os.path.exists(USERS_FILE):
@@ -88,64 +98,33 @@ async def show_main_menu(message):
     text = "به ربات عمو عکسی خوش اومدی بریم با هم دنبال عکس با متنی که میدی بگردیم یا از پیشنهادا استفاده کن از منوی زیر جستجو رو انتخاب کن"
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
-        KeyboardButton("جستجو"),
-        KeyboardButton("درباره من"),
-        KeyboardButton("راهنما")
-    ).add(
-        KeyboardButton("تماس با مالک عمو عکسی")
+        KeyboardButton("📸 عکس از کانال عمو"),
+        KeyboardButton("🔍 جستجوی دلخواه")
     )
     await message.answer(text, reply_markup=keyboard)
 
-@dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
-async def static_pages(message: types.Message):
-    if "راهنما" in message.text:
-        await message.answer("برای دریافت عکس فقط یه کلمه مثل 'پروفایل دارک' بنویس یا از پیشنهادها استفاده کن.")
-    elif "درباره" in message.text:
-        await message.answer("عمو عکسی رو تیم SOULS ساخته برای راحت تر کردن سرچ عکس ها")
-    elif "تماس" in message.text:
-        await message.answer("با مالک عمو عکسی حرف بزن: @soulsownerbot")
-
-@dp.message_handler(lambda msg: "جستجو" in msg.text)
-async def suggest_options(message: types.Message):
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton("پیشنهادها", callback_data="show_suggestions"),
-        InlineKeyboardButton("جستجوی دلخواه", callback_data="text_search")
-    )
-    await message.answer("می‌خوای از پیشنهادها استفاده کنی یا خودت بنویسی؟", reply_markup=keyboard)
-
-@dp.callback_query_handler(lambda c: c.data == "show_suggestions")
-async def show_custom_suggestions(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup()
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    suggestions = [
-        ("پسرونه", "luxury man aesthetic"),
-        ("حیوانات", "animal aesthetic"),
-        ("دخترونه", "luxury woman aesthetic"),
-        ("پول", "money profile high quality"),
-        ("بچه", "cute baby aesthetic"),
-        ("ماشین", "car aesthetic"),
-        ("شخصیت انیمه", "anime character aesthetic"),
-        ("شخصیت کارتونی", "cartoon character aesthetic")
-    ]
-    for label, query in suggestions:
-        keyboard.insert(InlineKeyboardButton(label, callback_data=f"q_{query}"))
-    await callback.message.answer("یکی از گزینه‌های پیشنهادی رو انتخاب کن عمو:", reply_markup=keyboard)
-
-@dp.callback_query_handler(lambda c: c.data == "text_search")
-async def ask_for_custom_query(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup()
-    await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
-
-@dp.callback_query_handler(lambda c: c.data.startswith("q_"))
-async def handle_suggested_query(callback: types.CallbackQuery):
-    query = callback.data[2:]
-    await fetch_and_send_images(callback.message, query, callback.from_user.id)
+@dp.message_handler(lambda msg: msg.text == "📸 عکس از کانال عمو")
+async def random_photo_from_channel(message: types.Message):
     try:
-        await callback.message.edit_reply_markup()
-    except BadRequest:
-        pass
-    await show_retry_button(callback.message)
+        messages = await bot.get_chat(CHANNEL_3)
+        history = await bot.get_chat_history(chat_id=CHANNEL_3, limit=100)
+        photo_messages = [m for m in history if m.photo and str(m.message_id) not in used_channel_photos]
+
+        if not photo_messages:
+            await message.answer("فعلا عکسی برای ارسال باقی نمونده عمو!")
+            return
+
+        msg = random.choice(photo_messages)
+        used_channel_photos.add(str(msg.message_id))
+        save_used_photos()
+
+        await bot.copy_message(chat_id=message.chat.id, from_chat_id=CHANNEL_3, message_id=msg.message_id)
+    except Exception as e:
+        await message.answer("خطا در دریافت عکس از کانال عمو")
+
+@dp.message_handler(lambda msg: msg.text == "🔍 جستجوی دلخواه")
+async def ask_for_custom_query(message: types.Message):
+    await message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
 
 @dp.message_handler(commands=["stats"])
 async def show_stats(message: types.Message):
@@ -159,17 +138,8 @@ async def handle_custom_query(message: types.Message):
     if message.text.lower().startswith("/"):
         return
     await fetch_and_send_images(message, message.text, message.from_user.id)
-    await show_retry_button(message)
 
-async def show_retry_button(message):
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("عمو عمو دوباره", callback_data="again"))
-    await message.answer("میخوای دوباره جستوجو کنی عمو؟", reply_markup=keyboard)
-
-@dp.callback_query_handler(lambda c: c.data == "again")
-async def retry_suggestions(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup()
-    await suggest_options(callback.message)
+# جستجو با API
 
 def unsplash_fetch(query):
     try:
@@ -242,10 +212,7 @@ async def fetch_and_send_images(message, query, user_id):
     else:
         await message.answer("چیز به درد بخوری پیدا نکردم عمو")
 
-# ✅ حذف Webhook در استارت
-import asyncio
-from aiogram import executor
-
+# حذف Webhook در استارت
 async def on_startup(dp):
     await bot.delete_webhook(drop_pending_updates=True)
 
