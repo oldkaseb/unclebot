@@ -114,20 +114,20 @@ async def show_main_menu(message):
 @dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
 async def static_pages(message: types.Message):
     if "راهنما" in message.text:
-        await message.answer("برای دریافت عکس فقط یه کلمه بنویس.")
+        await message.answer("برای دریافت عکس فقط یه کلمه بنویس یا از خود کانال عمو عکسی یه عکس بگیر")
     elif "درباره" in message.text:
-        await message.answer("عمو عکسی رو تیم SOULS ساخته.")
+        await message.answer("عمو عکسی رو تیم SOULS ساخته")
     elif "تماس" in message.text:
         await message.answer("با مالک صحبت کن: @soulsownerbot")
 
 # Send photo from channel
-@dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
+@dp.message_handler(lambda msg: msg.text == "عکس از خود عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
         photos = await bot.get_chat_history(CHANNEL_3, limit=100)
         candidates = [msg for msg in photos if msg.photo and str(msg.message_id) not in used_photo_ids]
         if not candidates:
-            await message.answer("هیچی عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
+            await message.answer("هیچ عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
             return
         msg = random.choice(candidates)
         used_photo_ids.add(str(msg.message_id))
@@ -238,11 +238,11 @@ async def ask_for_custom_query_text(message: types.Message):
 async def show_help(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("دستورات:
+    await message.answer("""دستورات:
 /start — شروع
 /help — لیست دستورات
 /stats — آمار کاربران
-/send — پیام همگانی (با ریپلای)")
+/send — پیام همگانی (با ریپلای)""")
 
 @dp.message_handler(commands=["stats"])
 async def show_stats(message: types.Message):
@@ -256,7 +256,7 @@ async def broadcast_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     if not message.reply_to_message:
-        await message.answer("برای پیام همگانی باید روی یک پیام ریپلای کنی.")
+        await message.answer("ریپ بزن کصخل")
         return
     count = 0
     for uid in users.keys():
