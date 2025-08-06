@@ -6,9 +6,10 @@ import json
 from datetime import datetime
 from PIL import Image
 from io import BytesIO
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, InputMediaPhoto
 from aiogram.utils.exceptions import BadRequest
+from aiogram import executor
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,7 +20,6 @@ CHANNEL_3 = os.getenv("CHANNEL_3")
 CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
 CHANNEL_3_LINK = os.getenv("CHANNEL_3_LINK")
-GROUP_LINK = os.getenv("GROUP_LINK")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 PEXELS_KEY = os.getenv("PEXELS_API_KEY")
@@ -30,7 +30,7 @@ dp = Dispatcher(bot)
 
 sent_cache = {}
 USERS_FILE = "users.json"
-CHANNEL_PHOTO_CACHE = set()
+SENT_MEDIA_IDS = set()
 
 
 def load_users():
@@ -65,7 +65,6 @@ async def show_subscription_check(message):
         InlineKeyboardButton("کانال دکتر گشاد", url=CHANNEL_1_LINK),
         InlineKeyboardButton("کانال تیم", url=CHANNEL_2_LINK),
         InlineKeyboardButton("کانال عکس و بیو", url=CHANNEL_3_LINK),
-        InlineKeyboardButton("گروه بچه ها (عضویت اختیاری)", url=GROUP_LINK),
         InlineKeyboardButton("عضو شدم عمو جون", callback_data="check_subs")
     )
     await message.answer(text, reply_markup=keyboard)
@@ -110,16 +109,45 @@ async def static_pages(message: types.Message):
 @dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
-        photos = await bot.get_chat_history(CHANNEL_3, limit=100)
-        candidates = [msg for msg in photos if msg.photo and str(msg.message_id) not in CHANNEL_PHOTO_CACHE]
-        if not candidates:
+        photos = await bot.get_chat_history(CHANNEL_3, limit=200)
+        albums = {}
+        singles = []
+
+        for msg in photos:
+            if msg.media_group_id:
+                albums.setdefault(msg.media_group_id, []).append(msg)
+            elif msg.photo:
+                singles.append(msg)
+
+        all_items = [v for v in albums.values() if v and v[0].media_group_id not in SENT_MEDIA_IDS]
+        all_items += [[m] for m in singles if str(m.message_id) not in SENT_MEDIA_IDS]
+
+        if not all_items:
             await message.answer("عکسی برای ارسال پیدا نکردم یا همه تکراری بودن عمو جون 😢")
             return
-        msg = random.choice(candidates)
-        CHANNEL_PHOTO_CACHE.add(str(msg.message_id))
-        await bot.copy_message(chat_id=message.chat.id, from_chat_id=CHANNEL_3, message_id=msg.message_id)
+
+        selected = random.choice(all_items)
+
+        for m in selected:
+            SENT_MEDIA_IDS.add(m.media_group_id or str(m.message_id))
+
+        if len(selected) > 1:
+            media = [InputMediaPhoto(media=p.photo[-1].file_id) for p in selected]
+            await bot.send_media_group(chat_id=message.chat.id, media=media)
+        else:
+            await bot.copy_message(chat_id=message.chat.id, from_chat_id=CHANNEL_3, message_id=selected[0].message_id)
+
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("📸 یدونه دیگه عمو", callback_data="more_channel_photo"))
+        await message.answer("اگه عکس دیگه‌ای خواستی رو دکمه بزن عمو", reply_markup=keyboard)
+
     except Exception as e:
         await message.answer("ارسال عکس از کانال با خطا مواجه شد عمو ❌")
+
+@dp.callback_query_handler(lambda c: c.data == "more_channel_photo")
+async def more_from_channel(callback: types.CallbackQuery):
+    await callback.message.delete_reply_markup()
+    await send_random_channel_photo(callback.message)
 
 @dp.message_handler(lambda msg: msg.text == "جستجوی دلخواه")
 async def ask_for_custom_query_text(message: types.Message):
@@ -130,7 +158,7 @@ async def show_stats(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     total = len(users)
-    await message.answer(f"تعداد کل کاربران: {total}")
+    await message.answer(f"👥 تعداد کل کاربران: {total}")
 
 @dp.message_handler(content_types=types.ContentType.TEXT)
 async def handle_custom_query(message: types.Message):
@@ -141,12 +169,12 @@ async def handle_custom_query(message: types.Message):
 
 async def show_retry_button(message):
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("عمو عمو دوباره", callback_data="again"))
+    keyboard.add(InlineKeyboardButton("🔁 عمو عمو دوباره", callback_data="again"))
     await message.answer("میخوای دوباره جستوجو کنی عمو؟", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data == "again")
 async def retry_suggestions(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup()
+    await callback.message.delete_reply_markup()
     await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
 
 def unsplash_fetch(query):
@@ -219,9 +247,6 @@ async def fetch_and_send_images(message, query, user_id):
         await message.answer("عمو برات عکس اورده")
     else:
         await message.answer("چیز به درد بخوری پیدا نکردم عمو")
-
-import asyncio
-from aiogram import executor
 
 async def on_startup(dp):
     await bot.delete_webhook(drop_pending_updates=True)
