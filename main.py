@@ -85,7 +85,7 @@ async def check_subscription(callback: types.CallbackQuery):
         await callback.answer("عضویت کامل نیست عمو جون لطفا عضو شو.", show_alert=True)
 
 async def show_main_menu(message):
-    text = "به ربات عمو عکسی خوش اومدی بریم با هم دنبال عکس با متنی که میدی بگردیم یا از پیشنهادا استفاده کن"
+    text = "به ربات عمو عکسی خوش اومدی بریم با هم دنبال عکس با متنی که میدی بگردیم یا از پیشنهادا استفاده کن از منوی زیر انتخاب کن"
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(
         KeyboardButton("جستجو"),
