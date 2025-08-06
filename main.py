@@ -32,29 +32,7 @@ USERS_FILE = "users.json"
 USED_PHOTOS_FILE = "used_photos.json"
 POSTED_FILE = "posted.json"
 
-forward_mode_enabled = False
-
-# ----------------- File I/O -------------------
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
-
-def load_used_photos():
-    if os.path.exists(USED_PHOTOS_FILE):
-        with open(USED_PHOTOS_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
-
-def save_used_photos(photo_ids):
-    with open(USED_PHOTOS_FILE, "w") as f:
-        json.dump(list(photo_ids), f)
-
+# فایل‌هایی که فقط برای عکس‌های ارسال‌شده توسط /post استفاده می‌شن
 def load_posted_ids():
     if os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "r") as f:
@@ -65,11 +43,35 @@ def save_posted_ids(posted_ids):
     with open(POSTED_FILE, "w") as f:
         json.dump(posted_ids, f, indent=2)
 
-users = load_users()
-used_photo_ids = load_used_photos()
 posted_ids = load_posted_ids()
 
-# ------------------ Start ---------------------
+# Load/save users
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+users = load_users()
+
+# Load/save used photos
+def load_used_photos():
+    if os.path.exists(USED_PHOTOS_FILE):
+        with open(USED_PHOTOS_FILE, "r") as f:
+            return set(json.load(f))
+    return set()
+
+def save_used_photos(photo_ids):
+    with open(USED_PHOTOS_FILE, "w") as f:
+        json.dump(list(photo_ids), f)
+
+used_photo_ids = load_used_photos()
+
+# Start
 @dp.message_handler(commands=["start"])
 async def cmd_start(message: types.Message):
     user_id = str(message.from_user.id)
@@ -83,6 +85,7 @@ async def cmd_start(message: types.Message):
     sent_cache[message.from_user.id] = set()
     await show_subscription_check(message)
 
+# Check subscription
 async def show_subscription_check(message):
     text = "اول تو کانالا عضو شو عمو جون"
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -108,6 +111,7 @@ async def check_subscription(callback: types.CallbackQuery):
     else:
         await callback.answer("عضویت کامل نیست عمو جون لطفا عضو شو.", show_alert=True)
 
+# Main menu
 async def show_main_menu(message):
     text = "به ربات عمو عکسی خوش اومدی!"
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -120,46 +124,48 @@ async def show_main_menu(message):
     )
     await message.answer(text, reply_markup=keyboard)
 
-# ----------------- Forward Mode ----------------
-@dp.message_handler(commands=["enable_forward_mode"])
-async def enable_forward_mode(message: types.Message):
-    global forward_mode_enabled
-    if message.from_user.id != ADMIN_ID:
-        return
-    forward_mode_enabled = True
-    await message.answer("🔓 حالت فوروارد فعال شد. حالا می‌تونی عکس‌ها رو فوروارد کنی تا ذخیره بشن.")
+# Static info
+@dp.message_handler(lambda msg: msg.text.startswith("راهنما") or msg.text.startswith("درباره") or msg.text.startswith("تماس"))
+async def static_pages(message: types.Message):
+    if "راهنما" in message.text:
+        await message.answer("برای دریافت عکس میتونی با متن دلخواه سرچ کنی یا از خود کانال عمو عکسی یه عکس بگیری")
+    elif "درباره" in message.text:
+        await message.answer("عمو عکسی رو تیم SOULS ساخته")
+    elif "تماس" in message.text:
+        await message.answer("با مالک صحبت کن: @soulsownerbot")
 
-@dp.message_handler(commands=["disable_forward_mode"])
-async def disable_forward_mode(message: types.Message):
-    global forward_mode_enabled
-    if message.from_user.id != ADMIN_ID:
-        return
-    forward_mode_enabled = False
-    await message.answer("🔒 حالت فوروارد غیرفعال شد.")
+@dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
+async def send_random_channel_photo(message: types.Message):
+    try:
+        candidates = [msg_id for msg_id in posted_ids if str(msg_id) not in used_photo_ids]
+        if not candidates:
+            await message.answer("هیچ عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
+            return
 
-@dp.message_handler(content_types=types.ContentType.PHOTO)
-async def handle_forwarded_photo(message: types.Message):
-    global forward_mode_enabled
-    if message.from_user.id != ADMIN_ID or not forward_mode_enabled:
-        return
-    if not message.forward_from_chat or not message.forward_from_message_id:
-        return
-    if message.forward_from_chat.username != CHANNEL_3.replace("@", ""):
-        return
-    mid = str(message.forward_from_message_id)
-    if mid in used_photo_ids:
-        await message.answer("⛔️ این عکس قبلاً ثبت شده عمو جون.")
-        return
-    used_photo_ids.add(mid)
-    save_used_photos(used_photo_ids)
-    await message.answer("✅ عکس با موفقیت ذخیره شد عمو جون.")
+        msg_id = random.choice(candidates)
+        used_photo_ids.add(str(msg_id))
+        save_used_photos(used_photo_ids)
 
-# ----------------- Catch Others ----------------
-@dp.message_handler()
-async def catch_all(message: types.Message):
-    await message.answer("برای شروع /start رو بزن یا یکی از دکمه‌ها رو انتخاب کن عمو جون!")
+        await bot.copy_message(
+            chat_id=message.chat.id,
+            from_chat_id=CHANNEL_3,
+            message_id=msg_id
+        )
 
-# ------------------- Launch --------------------
+        keyboard = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("📸 یه دونه دیگه عمو", callback_data="more_channel_photo")
+        )
+        await message.answer("عمو یه عکس دیگه می‌خوای؟", reply_markup=keyboard)
+
+    except:
+        await message.answer("❌ ارسال عکس از کانال با خطا مواجه شد عمو")
+
+@dp.callback_query_handler(lambda c: c.data == "more_channel_photo")
+async def handle_more_channel_photo(callback: types.CallbackQuery):
+    await callback.message.delete_reply_markup()
+    await send_random_channel_photo(callback.message)
+
+# Remove webhook
 async def on_startup(dp):
     await bot.delete_webhook(drop_pending_updates=True)
 
