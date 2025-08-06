@@ -120,23 +120,34 @@ async def static_pages(message: types.Message):
     elif "تماس" in message.text:
         await message.answer("با مالک صحبت کن: @soulsownerbot")
 
-# Send photo from channel
 @dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
         photos = await bot.get_chat_history(CHANNEL_3, limit=100)
         candidates = [msg for msg in photos if msg.photo and str(msg.message_id) not in used_photo_ids]
+        
         if not candidates:
             await message.answer("هیچ عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
             return
+
         msg = random.choice(candidates)
         used_photo_ids.add(str(msg.message_id))
         save_used_photos(used_photo_ids)
-        await bot.copy_message(chat_id=message.chat.id, from_chat_id=CHANNEL_3, message_id=msg.message_id)
-        keyboard = InlineKeyboardMarkup().add(InlineKeyboardButton("📸 یه دونه دیگه عمو", callback_data="more_channel_photo"))
+
+        await bot.copy_message(
+            chat_id=message.chat.id,
+            from_chat_id=CHANNEL_3,
+            message_id=msg.message_id
+        )
+
+        keyboard = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("📸 یه دونه دیگه عمو", callback_data="more_channel_photo")
+        )
         await message.answer("عمو یه عکس دیگه می‌خوای؟", reply_markup=keyboard)
+
     except Exception as e:
-        await message.answer("ارسال عکس از کانال با خطا مواجه شد عمو ❌")
+        await message.answer("❌ ارسال عکس از کانال با خطا مواجه شد عمو")
+        await message.answer(f"<code>{str(e)}</code>", parse_mode="HTML")  # نمایش خطا
 
 @dp.callback_query_handler(lambda c: c.data == "more_channel_photo")
 async def handle_more_channel_photo(callback: types.CallbackQuery):
