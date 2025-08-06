@@ -138,6 +138,7 @@ async def static_pages(message: types.Message):
 @dp.message_handler(lambda msg: msg.text == "عکس از کانال عمو")
 async def send_random_channel_photo(message: types.Message):
     try:
+        # پیام‌هایی که ارسال نشده‌اند را انتخاب کنیم
         candidates = [msg_id for msg_id in posted_ids if str(msg_id) not in used_photo_ids]
         if not candidates:
             await message.answer("هیچ عکس جدیدی پیدا نکردم عمو! همه تکراری بودن 😢")
@@ -152,6 +153,26 @@ async def send_random_channel_photo(message: types.Message):
         await message.answer("عمو یه عکس دیگه می‌خوای؟", reply_markup=keyboard)
     except:
         await message.answer("❌ ارسال عکس از کانال با خطا مواجه شد عمو")
+
+async def show_forwarding_control(message):
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(
+        InlineKeyboardButton("شروع فوروارد", callback_data="start_forwarding"),
+        InlineKeyboardButton("بستن فوروارد", callback_data="stop_forwarding")
+    )
+    await message.answer("کنترل فوروارد پیام‌ها", reply_markup=keyboard)
+
+@dp.callback_query_handler(lambda c: c.data == "start_forwarding")
+async def start_forwarding_callback(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    await callback.message.answer("فوروارد کردن پیام‌ها شروع شد.")
+
+@dp.callback_query_handler(lambda c: c.data == "stop_forwarding")
+async def stop_forwarding_callback(callback: types.CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        return
+    await callback.message.answer("فوروارد کردن پیام‌ها متوقف شد.")
 
 @dp.callback_query_handler(lambda c: c.data == "more_channel_photo")
 async def handle_more_channel_photo(callback: types.CallbackQuery):
@@ -283,6 +304,28 @@ async def broadcast_command(message: types.Message):
         except:
             pass
     await message.answer(f"📢 پیام برای {count} نفر فرستاده شد.")
+
+@dp.message_handler(commands=["start_forwarding"])
+async def start_forwarding(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    # شروع فوروارد کردن پیام‌ها
+    await message.answer("حالا می‌تونی پیام‌ها رو فوروارد کنی عمو.")
+
+@dp.message_handler(commands=["stop_forwarding"])
+async def stop_forwarding(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    # متوقف کردن فوروارد کردن پیام‌ها
+    await message.answer("فوروارد کردن پیام‌ها متوقف شد عمو.")
+
+@dp.message_handler(content_types=types.ContentType.TEXT)
+async def forward_message_handler(message: types.Message):
+    if message.forward_from_chat and message.forward_from_chat.id == CHANNEL_3:
+        # اگر پیام فوروارد شده از کانال عمو عکسی بود، ذخیره کنیم
+        posted_ids.append(message.message_id)
+        save_posted_ids(posted_ids)
+        await message.answer("پیام فوروارد شد عمو. ممنون که فرستادی!")
 
 @dp.message_handler(commands=["post"])
 async def post_to_channel(message: types.Message):
