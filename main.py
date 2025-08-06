@@ -32,6 +32,8 @@ USERS_FILE = "users.json"
 USED_PHOTOS_FILE = "used_photos.json"
 POSTED_FILE = "posted.json"
 
+forward_mode_enabled = False
+
 def load_users():
     if os.path.exists(USERS_FILE):
         with open(USERS_FILE, "r") as f:
@@ -150,158 +152,37 @@ async def handle_more_channel_photo(callback: types.CallbackQuery):
     await callback.message.delete_reply_markup()
     await send_random_channel_photo(callback.message)
 
-async def fetch_and_send_images(message, query, user_id):
-    await message.answer("عمو داره سرچ میکنه...")
-    imgs = unsplash_fetch(query) + pexels_fetch(query) + pixabay_fetch(query)
-    random.shuffle(imgs)
-    new_imgs = []
-    seen = sent_cache.setdefault(user_id, set())
-    for url in imgs:
-        if url in seen:
-            continue
-        file = make_square_image_from_url(url)
-        if file:
-            new_imgs.append(InputMediaPhoto(media=file))
-            seen.add(url)
-        if len(new_imgs) >= 10:
-            break
-    if new_imgs:
-        await bot.send_media_group(message.chat.id, new_imgs)
-        await message.answer("عمو برات عکس اورده")
-        keyboard = InlineKeyboardMarkup().add(InlineKeyboardButton("🔁 عمو عمو دوباره", callback_data="retry_search"))
-        await message.answer("میخوای دوباره جست‌وجو کنی عمو؟", reply_markup=keyboard)
-    else:
-        await message.answer("چیز به درد بخوری پیدا نکردم عمو")
-
-@dp.callback_query_handler(lambda c: c.data == "retry_search")
-async def retry_search(callback: types.CallbackQuery):
-    await callback.message.delete_reply_markup()
-    await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم تایپ کن من میرم میارم")
-    user_id = callback.from_user.id
-    sent_cache[user_id] = set()
-    user_input_mode[user_id] = True
-
-def unsplash_fetch(query):
-    try:
-        url = f"https://api.unsplash.com/search/photos?query={query}&per_page=30&orientation=squarish&content_filter=high&client_id={UNSPLASH_KEY}"
-        r = requests.get(url)
-        data = r.json()
-        return [item["urls"]["regular"] for item in data.get("results", []) if item.get("width", 0) >= 600 and item.get("height", 0) >= 600]
-    except:
-        return []
-
-def pexels_fetch(query):
-    try:
-        url = f"https://api.pexels.com/v1/search?query={query}&per_page=30"
-        headers = {"Authorization": PEXELS_KEY}
-        r = requests.get(url, headers=headers)
-        data = r.json()
-        return [item["src"]["large"] for item in data.get("photos", []) if "face" not in item.get("alt", "").lower()]
-    except:
-        return []
-
-def pixabay_fetch(query):
-    try:
-        url = f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={query}&image_type=photo&category=backgrounds&safesearch=true&editors_choice=true&per_page=30"
-        r = requests.get(url)
-        data = r.json()
-        return [item["largeImageURL"] for item in data.get("hits", []) if not item.get("userImageURL") and "face" not in item.get("tags", "").lower()]
-    except:
-        return []
-
-def make_square_image_from_url(url):
-    try:
-        response = requests.get(url)
-        if len(response.content) < 100 * 1024:
-            return None
-        img = Image.open(BytesIO(response.content)).convert("RGB")
-        if img.width < 600 or img.height < 600:
-            return None
-        min_side = min(img.size)
-        left = (img.width - min_side) // 2
-        top = (img.height - min_side) // 2
-        cropped = img.crop((left, top, left + min_side, top + min_side))
-        output = BytesIO()
-        output.name = "profile.jpg"
-        cropped.save(output, format="JPEG")
-        output.seek(0)
-        return output
-    except:
-        return None
-
-user_input_mode = {}
-
-@dp.message_handler(lambda msg: msg.text == "جستجوی دلخواه")
-async def ask_for_custom_query_text(message: types.Message):
-    await message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم تایپ کن من میرم میارم")
-    user_input_mode[message.from_user.id] = True
-
-@dp.message_handler(commands=["help"])
-async def show_help(message: types.Message):
+@dp.message_handler(commands=["enable_forward_mode"])
+async def enable_forward_mode(message: types.Message):
+    global forward_mode_enabled
     if message.from_user.id != ADMIN_ID:
         return
-    await message.answer("""دستورات:
-/start — شروع
-/help — لیست دستورات
-/stats — آمار کاربران
-/send — پیام همگانی (با ریپلای)
-/post — پست کردن عکس توی کانال سوم""")
+    forward_mode_enabled = True
+    await message.answer("🔓 حالت فوروارد فعال شد. حالا می‌تونی عکس‌ها رو فوروارد کنی تا ذخیره بشن.")
 
-@dp.message_handler(commands=["stats"])
-async def show_stats(message: types.Message):
+@dp.message_handler(commands=["disable_forward_mode"])
+async def disable_forward_mode(message: types.Message):
+    global forward_mode_enabled
     if message.from_user.id != ADMIN_ID:
         return
-    total = len(users)
-    await message.answer(f"تعداد کاربران: {total}")
+    forward_mode_enabled = False
+    await message.answer("🔒 حالت فوروارد غیرفعال شد.")
 
-@dp.message_handler(commands=["send"])
-async def broadcast_command(message: types.Message):
+@dp.message_handler(content_types=types.ContentType.PHOTO)
+async def handle_forwarded_photo(message: types.Message):
+    global forward_mode_enabled
     if message.from_user.id != ADMIN_ID:
         return
-    if not message.reply_to_message:
-        await message.answer("هزار بار گفتم ریپ بزن کیرت بشکنه")
+    if not forward_mode_enabled:
         return
-    count = 0
-    for uid in users.keys():
-        try:
-            await bot.copy_message(
-                chat_id=int(uid),
-                from_chat_id=message.chat.id,
-                message_id=message.reply_to_message.message_id
-            )
-            count += 1
-        except:
-            pass
-    await message.answer(f"📢 پیام برای {count} نفر فرستاده شد.")
-
-@dp.message_handler(commands=["post"])
-async def post_to_channel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if not message.forward_from_chat or not message.forward_from_message_id:
         return
-    if not message.reply_to_message:
-        await message.answer("عمو جون ریپلای کن روی پیامی که می‌خوای بفرستم تو کانال!")
+    if message.forward_from_chat.id != int(CHANNEL_3):
         return
-    try:
-        sent = await bot.copy_message(
-            chat_id=CHANNEL_3,
-            from_chat_id=message.chat.id,
-            message_id=message.reply_to_message.message_id
-        )
-        posted_ids.append(sent.message_id)
-        save_posted_ids(posted_ids)
-        await message.answer("✅ تو کانال فرستادم عمو!")
-    except Exception as e:
-        await message.answer(f"نشد عمو کیرت تو چرخ گوشت:\n\n`{e}`", parse_mode="Markdown")
-
-@dp.message_handler()
-async def catch_text(message: types.Message):
-    user_id = message.from_user.id
-    if user_input_mode.get(user_id):
-        await fetch_and_send_images(message, message.text, user_id)
-        user_input_mode[user_id] = False
-
-async def on_startup(dp):
-    await bot.delete_webhook(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+    mid = str(message.forward_from_message_id)
+    if mid in used_photo_ids:
+        await message.answer("⛔️ این عکس قبلاً ثبت شده عمو جون.")
+        return
+    used_photo_ids.add(mid)
+    save_used_photos(used_photo_ids)
+    await message.answer("✅ عکس با موفقیت ذخیره شد عمو جون.")
