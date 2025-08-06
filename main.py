@@ -118,11 +118,11 @@ async def suggest_options(message: types.Message):
 async def show_custom_suggestions(callback: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(row_width=2)
     suggestions = [
-        ("پسرونه", "boy aesthetic"),
+        ("پسرونه", "luxury man aesthetic"),
         ("حیوانات", "animal aesthetic"),
-        ("دخترونه", "girl aesthetic"),
+        ("دخترونه", "luxury woman aesthetic"),
         ("پول", "money profile high quality"),
-        ("بچه", "baby aesthetic"),
+        ("بچه", "cute baby aesthetic"),
         ("ماشین", "car aesthetic"),
         ("شخصیت انیمه", "anime character aesthetic"),
         ("شخصیت کارتونی", "cartoon character aesthetic")
