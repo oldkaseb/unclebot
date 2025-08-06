@@ -257,16 +257,21 @@ async def broadcast_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
     if not message.reply_to_message:
-        await message.answer("ریپ بزن کصخل")
+        await message.answer("هزار بار گفتم ریپ بزن کیرت بشکنه")
         return
+
     count = 0
     for uid in users.keys():
         try:
-            await message.copy_to(chat_id=int(uid), reply_to_message_id=message.reply_to_message.message_id)
+            await bot.copy_message(
+                chat_id=int(uid),
+                from_chat_id=message.chat.id,
+                message_id=message.reply_to_message.message_id
+            )
             count += 1
         except:
             pass
-    await message.answer(f"پیام برای {count} نفر فرستاده شد.")
+    await message.answer(f"📢 پیام برای {count} نفر فرستاده شد.")
 
 @dp.message_handler(commands=["post"])
 async def post_to_channel(message: types.Message):
