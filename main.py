@@ -105,4 +105,5 @@ async def on_startup(dp):
     await bot.delete_webhook(drop_pending_updates=True)
 
 if __name__ == '__main__':
+    from aiogram import executor
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
