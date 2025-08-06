@@ -116,6 +116,7 @@ async def suggest_options(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "show_suggestions")
 async def show_custom_suggestions(callback: types.CallbackQuery):
+    await callback.message.edit_reply_markup()
     keyboard = InlineKeyboardMarkup(row_width=2)
     suggestions = [
         ("پسرونه", "luxury man aesthetic"),
@@ -133,6 +134,7 @@ async def show_custom_suggestions(callback: types.CallbackQuery):
 
 @dp.callback_query_handler(lambda c: c.data == "text_search")
 async def ask_for_custom_query(callback: types.CallbackQuery):
+    await callback.message.edit_reply_markup()
     await callback.message.answer("چی پیدا کنم برات عمو جون بخواه فداتشم|تایپ کن من میرم میارم")
 
 @dp.callback_query_handler(lambda c: c.data.startswith("q_"))
@@ -166,6 +168,7 @@ async def show_retry_button(message):
 
 @dp.callback_query_handler(lambda c: c.data == "again")
 async def retry_suggestions(callback: types.CallbackQuery):
+    await callback.message.edit_reply_markup()
     await suggest_options(callback.message)
 
 def unsplash_fetch(query):
@@ -239,7 +242,7 @@ async def fetch_and_send_images(message, query, user_id):
     else:
         await message.answer("چیز به درد بخوری پیدا نکردم عمو")
 
-# ✅ اضافه‌شده برای حذف Webhook و رفع خطای getUpdates
+# ✅ حذف Webhook در استارت
 import asyncio
 from aiogram import executor
 
