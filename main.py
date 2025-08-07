@@ -88,16 +88,16 @@ async def start(message: types.Message):
         save_json(USERS_FILE, users)
 
     if await check_membership(message.from_user.id):
-        await message.answer("🎉 سلام عزیز دلم! عمو عکسی اینجاست برای عکس‌های خوشگل! یکی از دکمه‌های پایین رو بزن:", reply_markup=main_kb)
+        await message.answer("🎉 سلام عمو! عمو عکسی اینجاست که برات عکسای خفن بیاره! یکی از دکمه‌های پایین رو بزن:", reply_markup=main_kb)
     else:
-        await message.answer("👋 نازنینم! اول باید عضو هر دوتا کانال زیر بشی تا بیام کمکت!", reply_markup=join_keyboard())
+        await message.answer("👋 عمو جون! اول باید عضو هر دوتا کانال زیر بشی تا بیام کمکت!", reply_markup=join_keyboard())
 
 @dp.callback_query_handler(lambda c: c.data == "check_join")
 async def check_join(call: types.CallbackQuery):
     if await check_membership(call.from_user.id):
         await call.message.answer("✅ آفرین عمو! حالا یکی از دکمه‌های پایین رو بزن:", reply_markup=main_kb)
     else:
-        await call.message.answer("⛔️ هنوز عضو هر دو کانال نشدی!", reply_markup=join_keyboard())
+        await call.message.answer("⛔️ هنوز عضو هر دو کانال نشدی عمو اذیت نکن خب!", reply_markup=join_keyboard())
 
 @dp.message_handler(commands=["help"])
 async def help_cmd(message: types.Message):
@@ -114,7 +114,7 @@ async def help_cmd(message: types.Message):
 async def stats_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID:
         users = load_json(USERS_FILE)
-        await message.reply(f"📊 کاربران ثبت‌شده: {len(users)} نفر عزیز خوشگل داریم!")
+        await message.reply(f"📊 کاربران ثبت‌شده: {len(users)} نفر!")
 
 @dp.message_handler(commands=["addphoto"])
 async def addphoto(message: types.Message):
@@ -122,11 +122,11 @@ async def addphoto(message: types.Message):
         return
 
     if not message.reply_to_message:
-        await message.reply("⛔️ باید روی پیام عکس ریپلای کنی عمو جان!")
+        await message.reply("⛔️ ریپ بزن کصخل نوب!")
         return
 
     if not message.reply_to_message.photo:
-        await message.reply("📛 این پیام عکس نداره! فقط می‌تونم عکس‌ها رو اضافه کنم.")
+        await message.reply("📛 باید عکس باشه کص مغز")
         return
 
     try:
@@ -140,9 +140,9 @@ async def addphoto(message: types.Message):
         posted.setdefault("photo_ids", []).append(str(sent.message_id))
         save_json(POSTED_FILE, posted)
 
-        await message.reply("📥 عکستو فرستادم تو انبار عمو! الان ذخیره شد. دمت گرم! 🙌")
+        await message.reply("📥با موفقیت رفت توش🙌")
     except Exception as e:
-        await message.reply(f"❌ نتونستم عکسو ذخیره کنم عزیزم: {e}")
+        await message.reply(f"❌ عمو کشید بالا نتونستم بکنمش: {e}")
 
 @dp.message_handler(commands=["send"])
 async def send_cmd(message: types.Message):
@@ -150,14 +150,14 @@ async def send_cmd(message: types.Message):
         return
 
     if not message.reply_to_message:
-        await message.reply("⛔️ باید روی پیامی که می‌خوای بفرستی ریپلای کنی!")
+        await message.reply("⛔️ هر بار یادت میره ریپ بزنی کصخلی یا ادا در میاری؟")
         return
 
     users = load_json(USERS_FILE)
     sent_count = 0
     error_count = 0
 
-    await message.reply("📤 در حال ارسال پیام به کاربران عزیز هستم، یه کم صبر کن عمو...")
+    await message.reply("📤 دارم میدم دستشون عمو زیادن کصکشا...")
 
     for uid in users:
         try:
@@ -168,10 +168,10 @@ async def send_cmd(message: types.Message):
             )
             sent_count += 1
         except Exception as e:
-            print(f"❌ خطا در ارسال به {uid}: {e}")
+            print(f"❌ نشد {uid}: {e}")
             error_count += 1
 
-    await message.reply(f"✅ پیام با موفقیت برای {sent_count} نفر ارسال شد.\n❌ ناموفق: {error_count} نفر.")
+    await message.reply(f"✅ دادمش دست {sent_count} نفر جات خالی\n❌ بلاک کردن بیناموسا {error_count} نفر.")
 
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
@@ -195,7 +195,7 @@ async def send_random(message, user_id):
         kb = InlineKeyboardMarkup().add(
             InlineKeyboardButton("📡 رفتن به کانال عمو عکسی", url=CHANNEL_3_LINK)
         )
-        await message.answer("😅 همه عکسای منو دیدی عزیزم! یه سر به کانالم بزن، اونجا کلی عکس دیگه هست!", reply_markup=kb)
+        await message.answer("😅 تموم دیگه عمو عکس عمه منو نمیخوای؟ بریم تو کانالم یه دوری بزنیم پر عکسه", reply_markup=kb)
         return
 
     selected = random.choice(available)
@@ -207,9 +207,9 @@ async def send_random(message, user_id):
         )
         used.setdefault(str(user_id), []).append(selected)
         save_json(USED_FILE, used)
-        await message.answer("🎁 اینم یه عکس توپ از عمو! حال کردی؟", reply_markup=retry_keyboard("random"))
+        await message.answer("🎁 اینم یه عکس به سلیقه عمو عکسی برو برا رفیقات تعریف کن", reply_markup=retry_keyboard("random"))
     except Exception as e:
-        await message.answer(f"⛔️ مشکلی پیش اومد عزیزم: {e}")
+        await message.answer(f"⛔️ مشکلی پیش اومد عمو: {e}")
 
 @dp.message_handler()
 async def handle_message(message: types.Message):
@@ -226,20 +226,20 @@ async def handle_message(message: types.Message):
         state = load_json(STATE_FILE)
         state[str(message.from_user.id)] = True
         save_json(STATE_FILE, state)
-        await message.reply("🔍 خب عزیز دلم، یه کلمه بفرست برات عکس بیارم!")
+        await message.reply("🔍 خب عمو، یه کلمه بفرست برات عکس بیارم!")
 
     elif message.text == "ℹ️ درباره من":
-        await message.reply("👴 من یه عمو عکسی‌ام که هر عکسی بخوای برات دارم! باحال‌ترین ربات دنیای فارسی!")
+        await message.reply("👴 من عمو عکسی‌ام که هر عکسی بخوای دارم! باحال‌ترین ربات دنیای فارسی!")
 
     elif message.text == "💬 تماس با مالک عمو عکسی":
-        await message.reply("📮 برای صحبت با صاحب عمو عکسی، این ربات رو پیام بده: @soulsownerbot")
+        await message.reply("📮 برای صحبت با صاحب عمو عکسی، به این ربات پیام بده: @soulsownerbot")
 
     else:
         state = load_json(STATE_FILE)
         if state.get(str(message.from_user.id)):
             state[str(message.from_user.id)] = False
             save_json(STATE_FILE, state)
-            await message.reply("⏳ صبر کن عزیزم... دارم عکسای خوشگل برات پیدا می‌کنم...")
+            await message.reply("⏳ صبر کن عمو... دارم عکسای ناب برات پیدا می‌کنم...")
             await handle_search(message)
 
 async def handle_search(message: types.Message):
@@ -248,7 +248,7 @@ async def handle_search(message: types.Message):
     if photos:
         media = [InputMediaPhoto(url) for url in photos]
         await message.answer_media_group(media)
-        await message.answer("📷 اینا رو تونستم برات پیدا کنم!", reply_markup=retry_keyboard("search"))
+        await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
     else:
         await message.answer("😢 چیزی پیدا نکردم. یه کلمه دیگه بفرست یا دوباره تلاش کن!", reply_markup=retry_keyboard("search"))
 
