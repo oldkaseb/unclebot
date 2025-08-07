@@ -3,15 +3,10 @@ import json
 import random
 import aiohttp
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import (
-    ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    InputMediaPhoto
-)
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart, CommandHelp
 
-# بارگذاری متغیرها از محیط
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_1 = os.getenv("CHANNEL_1")
@@ -32,7 +27,6 @@ USED_FILE = "used_photos.json"
 USERS_FILE = "users.json"
 STATE_FILE = "search_state.json"
 
-# توابع فایل JSON
 
 def load_json(file):
     try:
@@ -45,7 +39,7 @@ def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f)
 
-# بررسی عضویت کامل
+
 async def check_membership(user_id):
     result = True
     for channel in [CHANNEL_1, CHANNEL_2]:
@@ -57,7 +51,6 @@ async def check_membership(user_id):
             result = False
     return result
 
-# کیبورد اصلی
 main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
     KeyboardButton("📸 عکس به سلیقه عمو"),
     KeyboardButton("🔍 جستجوی دلخواه"),
@@ -107,7 +100,14 @@ async def check_join(call: types.CallbackQuery):
 @dp.message_handler(commands=["help"])
 async def help_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID:
-        await message.reply("/stats /send /addphoto /post")
+        await message.reply("""
+📚 راهنمای ادمین عمو عکسی:
+
+/stats - نمایش تعداد کاربران
+/send - ارسال پیام همگانی (ریپلای روی پیام الزامی‌ست)
+/addphoto - افزودن عکس به حافظه ربات (باید روی عکس ریپلای کنی)
+/post - ارسال پیام یا آلبوم به کانال سوم (ریپلای الزامی)
+        """)
 
 @dp.message_handler(commands=["stats"])
 async def stats_cmd(message: types.Message):
@@ -121,9 +121,9 @@ async def send_cmd(message: types.Message):
         users = load_json(USERS_FILE)
         for uid in users:
             try:
-                await message.copy_to(chat_id=int(uid), from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
-            except:
-                pass
+                await bot.copy_message(chat_id=int(uid), from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
+            except Exception as e:
+                print(f"خطا در ارسال برای {uid}: {e}")
         await message.reply("📨 پیام همگانی ارسال شد.")
 
 @dp.message_handler(commands=["addphoto"])
@@ -137,11 +137,14 @@ async def addphoto(message: types.Message):
 @dp.message_handler(commands=["post"])
 async def post_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID and message.reply_to_message:
-        sent = await message.copy_to(chat_id=CHANNEL_3, from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
-        posted = load_json(POSTED_FILE)
-        posted.setdefault("photo_ids", []).append(str(sent.message_id))
-        save_json(POSTED_FILE, posted)
-        await message.reply("📤 محتوا به کانال ارسال شد.")
+        try:
+            sent = await bot.copy_message(chat_id=CHANNEL_3, from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
+            posted = load_json(POSTED_FILE)
+            posted.setdefault("photo_ids", []).append(str(sent.message_id))
+            save_json(POSTED_FILE, posted)
+            await message.reply("📤 محتوا با موفقیت به کانال ارسال شد.")
+        except Exception as e:
+            await message.reply(f"⛔️ خطا در ارسال: {e}")
 
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
@@ -197,6 +200,7 @@ async def handle_message(message: types.Message):
         if state.get(str(message.from_user.id)):
             state[str(message.from_user.id)] = False
             save_json(STATE_FILE, state)
+            await message.reply("⏳ صبر کن عزیزم... دارم عکسای خوشگل برات پیدا می‌کنم...")
             await handle_search(message)
 
 async def handle_search(message: types.Message):
