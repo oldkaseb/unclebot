@@ -47,14 +47,15 @@ def save_json(filename, data):
 
 # بررسی عضویت در 2 کانال
 async def check_membership(user_id):
+    result = True
     for channel in [CHANNEL_1, CHANNEL_2]:
         try:
             member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
             if member.status in ["left", "kicked"]:
-                return False
+                result = False
         except:
-            return False
-    return True
+            result = False
+    return result
 
 # کیبورد عضویت
 
