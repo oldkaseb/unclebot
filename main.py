@@ -325,8 +325,7 @@ async def post_to_channel(message: types.Message):
         save_posted_ids(posted_ids)
         await message.answer("✅ پست با موفقیت به کانال ارسال شد.")
     except Exception as e:
-        await message.answer(f"❌ خطا:
-`{e}`", parse_mode="Markdown")
+        await message.answer(f"❌ خطا در ارسال به کانال:\n\n`{e}`", parse_mode="Markdown")
 
 # بلاک پاسخ‌دهی در گروه
 @dp.message_handler(lambda msg: msg.chat.type != "private")
