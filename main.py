@@ -9,12 +9,16 @@ from aiogram.dispatcher.filters import CommandStart, CommandHelp
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
 CHANNEL_1 = os.getenv("CHANNEL_1")
 CHANNEL_2 = os.getenv("CHANNEL_2")
 CHANNEL_3 = os.getenv("CHANNEL_3")
+CHANNEL_4 = int(os.getenv("CHANNEL_4"))
+
 CHANNEL_1_LINK = os.getenv("CHANNEL_1_LINK")
 CHANNEL_2_LINK = os.getenv("CHANNEL_2_LINK")
 CHANNEL_3_LINK = os.getenv("CHANNEL_3_LINK")
+
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
@@ -27,7 +31,6 @@ USED_FILE = "used_photos.json"
 USERS_FILE = "users.json"
 STATE_FILE = "search_state.json"
 
-
 def load_json(file):
     try:
         with open(file, "r") as f:
@@ -38,7 +41,6 @@ def load_json(file):
 def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f)
-
 
 async def check_membership(user_id):
     result = True
@@ -106,45 +108,70 @@ async def help_cmd(message: types.Message):
 /stats - نمایش تعداد کاربران
 /send - ارسال پیام همگانی (ریپلای روی پیام الزامی‌ست)
 /addphoto - افزودن عکس به حافظه ربات (باید روی عکس ریپلای کنی)
-/post - ارسال پیام یا آلبوم به کانال سوم (ریپلای الزامی)
         """)
 
 @dp.message_handler(commands=["stats"])
 async def stats_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID:
         users = load_json(USERS_FILE)
-        await message.reply(f"📊 کاربران ثبت‌شده: {len(users)}")
-
-@dp.message_handler(commands=["send"])
-async def send_cmd(message: types.Message):
-    if message.from_user.id == ADMIN_ID and message.reply_to_message:
-        users = load_json(USERS_FILE)
-        for uid in users:
-            try:
-                await bot.copy_message(chat_id=int(uid), from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
-            except Exception as e:
-                print(f"خطا در ارسال برای {uid}: {e}")
-        await message.reply("📨 پیام همگانی ارسال شد.")
+        await message.reply(f"📊 کاربران ثبت‌شده: {len(users)} نفر عزیز خوشگل داریم!")
 
 @dp.message_handler(commands=["addphoto"])
 async def addphoto(message: types.Message):
-    if message.from_user.id == ADMIN_ID and message.reply_to_message:
-        posted = load_json(POSTED_FILE)
-        posted.setdefault("photo_ids", []).append(str(message.reply_to_message.message_id))
-        save_json(POSTED_FILE, posted)
-        await message.reply("📥 عکس با موفقیت ذخیره شد.")
+    if message.from_user.id != ADMIN_ID:
+        return
 
-@dp.message_handler(commands=["post"])
-async def post_cmd(message: types.Message):
-    if message.from_user.id == ADMIN_ID and message.reply_to_message:
+    if not message.reply_to_message:
+        await message.reply("⛔️ باید روی پیام عکس ریپلای کنی عمو جان!")
+        return
+
+    if not message.reply_to_message.photo:
+        await message.reply("📛 این پیام عکس نداره! فقط می‌تونم عکس‌ها رو اضافه کنم.")
+        return
+
+    try:
+        sent = await bot.copy_message(
+            chat_id=CHANNEL_4,
+            from_chat_id=message.chat.id,
+            message_id=message.reply_to_message.message_id
+        )
+
+        posted = load_json(POSTED_FILE)
+        posted.setdefault("photo_ids", []).append(str(sent.message_id))
+        save_json(POSTED_FILE, posted)
+
+        await message.reply("📥 عکستو فرستادم تو انبار عمو! الان ذخیره شد. دمت گرم! 🙌")
+    except Exception as e:
+        await message.reply(f"❌ نتونستم عکسو ذخیره کنم عزیزم: {e}")
+
+@dp.message_handler(commands=["send"])
+async def send_cmd(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not message.reply_to_message:
+        await message.reply("⛔️ باید روی پیامی که می‌خوای بفرستی ریپلای کنی!")
+        return
+
+    users = load_json(USERS_FILE)
+    sent_count = 0
+    error_count = 0
+
+    await message.reply("📤 در حال ارسال پیام به کاربران عزیز هستم، یه کم صبر کن عمو...")
+
+    for uid in users:
         try:
-            sent = await bot.copy_message(chat_id=CHANNEL_3, from_chat_id=message.chat.id, message_id=message.reply_to_message.message_id)
-            posted = load_json(POSTED_FILE)
-            posted.setdefault("photo_ids", []).append(str(sent.message_id))
-            save_json(POSTED_FILE, posted)
-            await message.reply("📤 محتوا با موفقیت به کانال ارسال شد.")
+            await bot.copy_message(
+                chat_id=int(uid),
+                from_chat_id=message.chat.id,
+                message_id=message.reply_to_message.message_id
+            )
+            sent_count += 1
         except Exception as e:
-            await message.reply(f"⛔️ خطا در ارسال: {e}")
+            print(f"❌ خطا در ارسال به {uid}: {e}")
+            error_count += 1
+
+    await message.reply(f"✅ پیام با موفقیت برای {sent_count} نفر ارسال شد.\n❌ ناموفق: {error_count} نفر.")
 
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
@@ -163,14 +190,26 @@ async def send_random(message, user_id):
     posted = load_json(POSTED_FILE).get("photo_ids", [])
     used = load_json(USED_FILE)
     available = list(set(posted) - set(used.get(str(user_id), [])))
+
     if not available:
-        await message.answer("😕 فعلاً عکسی ندارم که تکراری نباشه!")
+        kb = InlineKeyboardMarkup().add(
+            InlineKeyboardButton("📡 رفتن به کانال عمو عکسی", url=CHANNEL_3_LINK)
+        )
+        await message.answer("😅 همه عکسای منو دیدی عزیزم! یه سر به کانالم بزن، اونجا کلی عکس دیگه هست!", reply_markup=kb)
         return
+
     selected = random.choice(available)
-    await bot.copy_message(chat_id=user_id, from_chat_id=CHANNEL_3, message_id=int(selected))
-    used.setdefault(str(user_id), []).append(selected)
-    save_json(USED_FILE, used)
-    await message.answer("😊 اینم یه عکس توپ از عمو!", reply_markup=retry_keyboard("random"))
+    try:
+        await bot.copy_message(
+            chat_id=user_id,
+            from_chat_id=CHANNEL_4,
+            message_id=int(selected)
+        )
+        used.setdefault(str(user_id), []).append(selected)
+        save_json(USED_FILE, used)
+        await message.answer("🎁 اینم یه عکس توپ از عمو! حال کردی؟", reply_markup=retry_keyboard("random"))
+    except Exception as e:
+        await message.answer(f"⛔️ مشکلی پیش اومد عزیزم: {e}")
 
 @dp.message_handler()
 async def handle_message(message: types.Message):
