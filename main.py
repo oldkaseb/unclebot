@@ -328,15 +328,13 @@ async def handle_text2img(message: types.Message):
     prompt = message.text.strip()
 
     if not all(c.isascii() for c in prompt):
-        await message.answer("⚠️ لطفاً جمله رو به انگلیسی بنویس که بتونم عکس بسازم.")
+        await message.answer("⚠️ جمله باید انگلیسی باشه عمو! یه بار دیگه امتحان کن.")
         return
 
     await message.answer("🎨 دارم با هوش مصنوعی عکس می‌سازم برات... یه لحظه صبر کن عمو!")
 
-    url = "https://huggingface.co/spaces/damian0815/playground-turbo/+/api/predict"
-    payload = {
-        "data": [prompt]
-    }
+    url = "https://hf.space/embed/damian0815/playground-turbo/api/predict"
+    payload = {"data": [prompt]}
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -346,11 +344,11 @@ async def handle_text2img(message: types.Message):
 
                 if image_url:
                     await message.answer_photo(photo=image_url)
-                    await message.answer("✨ اینم تصویرت عمو! اگه بازم می‌خوای، جمله بعدی رو بفرست!", reply_markup=retry_keyboard("text2img"))
+                    await message.answer("✨ اینم تصویرت عمو! اگه بازم می‌خوای، جمله بعدی رو بفرست یا دکمه پرامپت رندوم رو بزن.", reply_markup=retry_keyboard("text2img"))
                 else:
                     await message.answer("😕 عکسی ساخته نشد عمو. یه جمله دیگه امتحان کن!")
     except Exception as e:
-        await message.answer(f"❌ ارور در ساخت تصویر: {e}")
+        await message.answer("❌ اوه عمو! یه مشکلی پیش اومد. یه کم بعد دوباره امتحان کن.")
 
 # اجرای ربات
 if __name__ == "__main__":
