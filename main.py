@@ -346,24 +346,33 @@ async def search_photos(query):
 
 async def handle_text2img(message: types.Message):
     prompt = message.text.strip()
+    await message.answer("🎨 دارم با هوش مصنوعی عکس می‌سازم برات... یه لحظه صبر کن عمو!")
+
+    url = "https://stablediffusionapi.com/api/v3/text2img"
+    payload = {
+        "prompt": prompt,
+        "negative_prompt": "low quality, blurry, bad anatomy",
+        "width": "512",
+        "height": "512",
+        "samples": "1",
+        "num_inference_steps": "30",
+        "guidance_scale": 7.5,
+        "seed": None
+    }
+
     try:
-        await message.answer("🎨 دارم با هوش مصنوعی عکس می‌سازم برات... یه لحظه صبر کن عمو!")
         async with aiohttp.ClientSession() as session:
-            url = "https://anzorq-pixart.hf.space/api/predict"
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "data": [prompt]
-            }
-            async with session.post(url, json=payload, headers=headers) as resp:
+            async with session.post(url, json=payload) as resp:
                 result = await resp.json()
-                if "data" in result and isinstance(result["data"], list):
-                    image_url = result["data"][0]
+                image_url = result.get("output", [None])[0]
+
+                if image_url:
                     await message.answer_photo(photo=image_url)
-                    await message.answer("✨ اینم تصویرت عمو! بازم جمله بده تا بسازم برات!", reply_markup=retry_keyboard("search"))
+                    await message.answer("✨ اینم تصویرت عمو! اگه بازم می‌خوای، جمله بعدی رو بفرست!", reply_markup=retry_keyboard("search"))
                 else:
-                    await message.answer("😓 نشد عمو! یه چیز دیگه بفرست امتحان کنیم.")
+                    await message.answer("😕 عکسی ساخته نشد عمو. یه جمله دیگه امتحان کن!")
     except Exception as e:
         await message.answer(f"❌ ارور در ساخت تصویر: {e}")
-
+        
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
