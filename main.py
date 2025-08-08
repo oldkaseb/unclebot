@@ -296,27 +296,29 @@ async def handle_message(message: types.Message):
 async def handle_search(message: types.Message):
     uid = str(message.from_user.id)
     query = message.text.strip().lower()
-
     all_photos = await search_photos(query)
 
     history = load_json(HISTORY_FILE)
-    user_history = history.get(uid, {}).get(query, [])
+    if uid not in history:
+        history[uid] = {}
 
-    # فیلتر عکس‌های جدیدی که قبلاً برای این کاربر در این جستجو فرستاده نشده بودن
-    new_photos = [url for url in all_photos if url not in user_history]
+    if query not in history[uid]:
+        history[uid][query] = []
+
+    seen_urls = set(history[uid][query])
+    new_photos = [url for url in all_photos if url not in seen_urls]
 
     if not new_photos:
         await message.reply("😕 عکسی جدید برای این موضوع ندارم عمو. یه چیز دیگه بفرست!", reply_markup=retry_keyboard("search"))
         return
 
     # ذخیره عکس‌های جدید
-    history.setdefault(uid, {}).setdefault(query, []).extend(new_photos)
+    history[uid][query].extend(new_photos)
     save_json(HISTORY_FILE, history)
 
     media = [InputMediaPhoto(url) for url in new_photos[:10]]
     await message.answer_media_group(media)
     await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
-
 
 async def search_photos(query):
     urls = []
@@ -343,20 +345,20 @@ async def search_photos(query):
     return urls[:10]
 
 async def handle_text2img(message: types.Message):
-    prompt = message.text
+    prompt = message.text.strip()
     try:
         output = replicate_client.run(
-            "stability-ai/stable-diffusion:a9758cbf8cf71812e1b45d1ddfb774d957f25c1e579b9e992af287f840a5f926",
+            "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
             input={"prompt": prompt}
         )
         if isinstance(output, list):
             for url in output:
                 await message.answer_photo(photo=url)
-            await message.answer("🎨 اینم تصویرت با هوش مصنوعی عمو! بازم می‌خوای بفرست جمله بعدی رو.", reply_markup=retry_keyboard("search"))
+            await message.answer("🎨 اینم تصویری که برات ساختم! بازم می‌خوای یه جمله دیگه بفرست.", reply_markup=retry_keyboard("search"))
         else:
-            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن!")
+            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن.")
     except Exception as e:
-        await message.answer(f"❌ ارور در ساخت عکس: {e}")
+        await message.answer(f"❌ خطا در ساخت تصویر: {e}")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
