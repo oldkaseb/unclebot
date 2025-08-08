@@ -127,7 +127,7 @@ async def start(message: types.Message):
         save_json(USERS_FILE, users)
 
     if await check_membership(message.from_user.id):
-        await message.answer("🎉 سلام عمو! عمو عکسی اینجاست که برات عکسای خفن بیاره! یکی از دکمه‌های پایین رو بزن:", reply_markup=main_kb)
+        await message.answer("ربات عمو عکسی در حال حاضر داره آپدیت میشه صبور باشید", reply_markup=main_kb)
     else:
         await message.answer("👋 عمو جون! اول باید عضو هر دوتا کانال زیر بشی تا بیام کمکت!", reply_markup=join_keyboard())
 
