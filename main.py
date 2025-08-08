@@ -8,6 +8,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart, CommandHelp
 
+# دریافت متغیرها از Railway
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
@@ -29,7 +30,7 @@ replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# فایل‌ها
+# فایل‌های داده
 POSTED_FILE = "posted.json"
 USED_FILE = "used_photos.json"
 USERS_FILE = "users.json"
@@ -37,7 +38,7 @@ STATE_FILE = "search_state.json"
 HISTORY_FILE = "search_history.json"
 TEXT2IMG_STATE = "text2img_state.json"
 
-# ذخیره و بارگذاری
+# توابع ذخیره‌سازی و بارگذاری
 def load_json(file):
     try:
         with open(file, "r", encoding="utf-8") as f:
@@ -55,6 +56,7 @@ def ensure_file(file, default):
     if not os.path.exists(file):
         save_json(file, default)
 
+# اطمینان از اینکه فایل‌های موردنیاز از قبل ساخته شدن
 for file, default in [
     (POSTED_FILE, {"photo_ids": []}),
     (USED_FILE, {}),
@@ -62,7 +64,8 @@ for file, default in [
     (STATE_FILE, {}),
     (HISTORY_FILE, {}),
     (TEXT2IMG_STATE, {})
-]: ensure_file(file, default)
+]:
+    ensure_file(file, default)
 
 # کیبوردها
 main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
@@ -292,21 +295,28 @@ async def handle_message(message: types.Message):
 
 async def handle_search(message: types.Message):
     uid = str(message.from_user.id)
-    query = message.text
-    photos = await search_photos(query)
+    query = message.text.strip().lower()
+
+    all_photos = await search_photos(query)
 
     history = load_json(HISTORY_FILE)
-    seen = history.get(uid, {}).get(query, [])
-    new_photos = [url for url in photos if url not in seen]
+    user_history = history.get(uid, {}).get(query, [])
 
-    if new_photos:
-        history.setdefault(uid, {}).setdefault(query, []).extend(new_photos)
-        save_json(HISTORY_FILE, history)
-        media = [InputMediaPhoto(url) for url in new_photos[:10]]
-        await message.answer_media_group(media)
-        await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
-    else:
-        await message.answer("😕 عکسی جدیدی برای این موضوع ندارم عمو. یه چیز دیگه بفرست!")
+    # فیلتر عکس‌های جدیدی که قبلاً برای این کاربر در این جستجو فرستاده نشده بودن
+    new_photos = [url for url in all_photos if url not in user_history]
+
+    if not new_photos:
+        await message.reply("😕 عکسی جدید برای این موضوع ندارم عمو. یه چیز دیگه بفرست!", reply_markup=retry_keyboard("search"))
+        return
+
+    # ذخیره عکس‌های جدید
+    history.setdefault(uid, {}).setdefault(query, []).extend(new_photos)
+    save_json(HISTORY_FILE, history)
+
+    media = [InputMediaPhoto(url) for url in new_photos[:10]]
+    await message.answer_media_group(media)
+    await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
+
 
 async def search_photos(query):
     urls = []
@@ -336,17 +346,17 @@ async def handle_text2img(message: types.Message):
     prompt = message.text
     try:
         output = replicate_client.run(
-            "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
+            "stability-ai/stable-diffusion:a9758cbf8cf71812e1b45d1ddfb774d957f25c1e579b9e992af287f840a5f926",
             input={"prompt": prompt}
         )
         if isinstance(output, list):
             for url in output:
                 await message.answer_photo(photo=url)
-            await message.answer("🎨 اینم تصویری که با هوش مصنوعی ساختم! اگه بازم می‌خوای، دوباره بگو.", reply_markup=retry_keyboard("search"))
+            await message.answer("🎨 اینم تصویرت با هوش مصنوعی عمو! بازم می‌خوای بفرست جمله بعدی رو.", reply_markup=retry_keyboard("search"))
         else:
-            await message.answer("😓 نشد عمو. یه چیزی اشتباه شد. یه بار دیگه امتحان کن.")
+            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن!")
     except Exception as e:
-        await message.answer(f"❌ اوه نه! یه مشکلی پیش اومد موقع ساخت تصویر: {e}")
+        await message.answer(f"❌ ارور در ساخت عکس: {e}")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
