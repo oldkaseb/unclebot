@@ -11,7 +11,7 @@ from aiogram.types import (
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 
-# دریافت متغیرهای محیطی از Railway
+# متغیرهای محیطی از Railway
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_1 = os.getenv("CHANNEL_1")
@@ -28,7 +28,7 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# فایل‌های ذخیره‌سازی داده
+# فایل‌های دیتا
 POSTED_FILE = "posted.json"
 USED_FILE = "used_photos.json"
 USERS_FILE = "users.json"
@@ -36,7 +36,6 @@ STATE_FILE = "search_state.json"
 HISTORY_FILE = "search_history.json"
 TEXT2IMG_STATE = "text2img_state.json"
 
-# توابع فایل
 def load_json(file):
     try:
         with open(file, "r", encoding="utf-8") as f:
@@ -54,7 +53,7 @@ def ensure_file(file, default):
     if not os.path.exists(file):
         save_json(file, default)
 
-# اطمینان از ایجاد فایل‌های موردنیاز
+# ساخت فایل‌ها در صورت نبودن
 for file, default in [
     (POSTED_FILE, {"photo_ids": []}),
     (USED_FILE, {}),
@@ -75,7 +74,7 @@ main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
     KeyboardButton("💬 تماس با مالک عمو عکسی")
 )
 
-# دکمه‌های چک عضویت و دکمه درخواست مجدد
+# دکمه‌های اینلاین برای درخواست مجدد یا رفتن به کانال
 def retry_keyboard(mode):
     kb = InlineKeyboardMarkup()
     if mode == "random":
@@ -132,7 +131,7 @@ async def start(message: types.Message):
     else:
         await message.answer("👋 عمو جون! اول باید عضو هر دوتا کانال زیر بشی تا بیام کمکت!", reply_markup=join_keyboard())
 
-# چک عضویت با دکمه ✅ عضو شدم
+# دکمه ✅ عضو شدم
 @dp.callback_query_handler(lambda c: c.data == "check_join")
 async def check_join(call: types.CallbackQuery):
     if await check_membership(call.from_user.id):
@@ -205,7 +204,6 @@ async def send_random(message, user_id):
     )
     await message.answer("😅 تموم شد عمو! دیگه عکسی نمونده که قبلاً ندیده باشی. بریم یه چرخی تو کانالم بزنیم؟", reply_markup=kb)
 
-# مدیریت دکمه‌ها و متون دریافتی
 @dp.message_handler()
 async def handle_message(message: types.Message):
     uid = str(message.from_user.id)
@@ -232,26 +230,26 @@ async def handle_message(message: types.Message):
         await message.reply("🎨 خب عمو، یه جمله انگلیسی بده تا با هوش مصنوعی برات یه عکس توپ بسازم!\n\n📌 جمله باید انگلیسی باشه تا درست کار کنه!", reply_markup=retry_keyboard("text2img"))
 
     elif message.text == "🎲 پرامپت تصادفی":
-    prompts = [
-        "a magical castle in the sky",
-        "a futuristic city on Mars",
-        "a fantasy dragon flying over mountains",
-        "an astronaut walking on an alien planet",
-        "a cyberpunk cat with neon lights",
-        "a colorful dream forest with glowing trees",
-        "an underwater city with mermaids",
-        "a vintage robot cooking in a kitchen",
-        "a surreal sunset over the ocean",
-        "a dreamy landscape full of giant mushrooms"
-    ]
-    selected = random.choice(prompts)
-    await message.answer(f"🎯 جمله انتخابی: `{selected}`", parse_mode="Markdown")
-    await handle_text2img(types.Message(
-        message_id=message.message_id,
-        from_user=message.from_user,
-        chat=message.chat,
-        text=selected
-    ))
+        prompts = [
+            "a magical castle in the sky",
+            "a futuristic city on Mars",
+            "a fantasy dragon flying over mountains",
+            "an astronaut walking on an alien planet",
+            "a cyberpunk cat with neon lights",
+            "a colorful dream forest with glowing trees",
+            "an underwater city with mermaids",
+            "a vintage robot cooking in a kitchen",
+            "a surreal sunset over the ocean",
+            "a dreamy landscape full of giant mushrooms"
+        ]
+        selected = random.choice(prompts)
+        await message.answer(f"🎯 جمله انتخابی: `{selected}`", parse_mode="Markdown")
+        await handle_text2img(types.Message(
+            message_id=message.message_id,
+            from_user=message.from_user,
+            chat=message.chat,
+            text=selected
+        ))
 
     elif message.text == "ℹ️ درباره من":
         await message.reply("👴 من عمو عکسی‌ام که هر عکسی بخوای دارم! باحال‌ترین ربات دنیای فارسی!")
@@ -260,6 +258,7 @@ async def handle_message(message: types.Message):
         await message.reply("📮 برای صحبت با صاحب عمو عکسی، به این ربات پیام بده: @soulsownerbot")
 
     else:
+        # حالت جستجوی دلخواه
         state = load_json(STATE_FILE)
         if state.get(uid):
             state[uid] = False
@@ -268,6 +267,7 @@ async def handle_message(message: types.Message):
             await handle_search(message)
             return
 
+        # حالت تبدیل متن به عکس
         t2i = load_json(TEXT2IMG_STATE)
         if t2i.get(uid):
             t2i[uid] = False
@@ -275,7 +275,6 @@ async def handle_message(message: types.Message):
             await message.reply("🧠 دارم فکر می‌کنم...")
             await handle_text2img(message)
 
-# جستجو و جلوگیری از عکس تکراری
 async def handle_search(message: types.Message):
     uid = str(message.from_user.id)
     query = message.text.strip().lower()
@@ -301,7 +300,6 @@ async def handle_search(message: types.Message):
     await message.answer_media_group(media)
     await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
 
-# سرچ در Unsplash و Pexels و Pixabay
 async def search_photos(query):
     urls = []
     async with aiohttp.ClientSession() as s:
