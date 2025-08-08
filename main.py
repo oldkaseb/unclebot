@@ -70,6 +70,7 @@ main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
     KeyboardButton("📸 عکس به سلیقه عمو"),
     KeyboardButton("🔍 جستجوی دلخواه"),
     KeyboardButton("🖌️ تبدیل متن به عکس"),
+    KeyboardButton("🎲 پرامپت تصادفی"),
     KeyboardButton("ℹ️ درباره من"),
     KeyboardButton("💬 تماس با مالک عمو عکسی")
 )
@@ -230,6 +231,28 @@ async def handle_message(message: types.Message):
         save_json(TEXT2IMG_STATE, t2i)
         await message.reply("🎨 خب عمو، یه جمله انگلیسی بده تا با هوش مصنوعی برات یه عکس توپ بسازم!\n\n📌 جمله باید انگلیسی باشه تا درست کار کنه!", reply_markup=retry_keyboard("text2img"))
 
+    elif message.text == "🎲 پرامپت تصادفی":
+    prompts = [
+        "a magical castle in the sky",
+        "a futuristic city on Mars",
+        "a fantasy dragon flying over mountains",
+        "an astronaut walking on an alien planet",
+        "a cyberpunk cat with neon lights",
+        "a colorful dream forest with glowing trees",
+        "an underwater city with mermaids",
+        "a vintage robot cooking in a kitchen",
+        "a surreal sunset over the ocean",
+        "a dreamy landscape full of giant mushrooms"
+    ]
+    selected = random.choice(prompts)
+    await message.answer(f"🎯 جمله انتخابی: `{selected}`", parse_mode="Markdown")
+    await handle_text2img(types.Message(
+        message_id=message.message_id,
+        from_user=message.from_user,
+        chat=message.chat,
+        text=selected
+    ))
+
     elif message.text == "ℹ️ درباره من":
         await message.reply("👴 من عمو عکسی‌ام که هر عکسی بخوای دارم! باحال‌ترین ربات دنیای فارسی!")
 
@@ -303,29 +326,25 @@ async def search_photos(query):
         except: pass
     return urls[:10]
 
-# تبدیل متن به عکس
 async def handle_text2img(message: types.Message):
     prompt = message.text.strip()
 
+    if not all(c.isascii() for c in prompt):
+        await message.answer("⚠️ لطفاً جمله رو به انگلیسی بنویس که بتونم عکس بسازم.")
+        return
+
     await message.answer("🎨 دارم با هوش مصنوعی عکس می‌سازم برات... یه لحظه صبر کن عمو!")
 
-    url = "https://stablediffusionapi.com/api/v3/text2img"
+    url = "https://huggingface.co/spaces/damian0815/playground-turbo/+/api/predict"
     payload = {
-        "prompt": prompt,
-        "negative_prompt": "low quality, blurry, bad anatomy",
-        "width": "512",
-        "height": "512",
-        "samples": "1",
-        "num_inference_steps": "30",
-        "guidance_scale": 7.5,
-        "seed": None
+        "data": [prompt]
     }
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
                 result = await resp.json()
-                image_url = result.get("output", [None])[0]
+                image_url = result["data"][0]
 
                 if image_url:
                     await message.answer_photo(photo=image_url)
