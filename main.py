@@ -347,16 +347,21 @@ async def search_photos(query):
 async def handle_text2img(message: types.Message):
     prompt = message.text.strip()
     try:
-        output = replicate_client.run(
-            "cjwbw/stable-diffusion-v1-4",
-            input={"prompt": prompt}
-        )
-        if isinstance(output, list):
-            for url in output:
-                await message.answer_photo(photo=url)
-            await message.answer("🎨 اینم تصویری که با هوش مصنوعی ساختم! جمله بعدی رو بفرست تا عکس بعدی رو بسازم ✨", reply_markup=retry_keyboard("search"))
-        else:
-            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن.")
+        await message.answer("🎨 دارم با هوش مصنوعی عکس می‌سازم برات... یه لحظه صبر کن عمو!")
+        async with aiohttp.ClientSession() as session:
+            url = "https://anzorq-pixart.hf.space/api/predict"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "data": [prompt]
+            }
+            async with session.post(url, json=payload, headers=headers) as resp:
+                result = await resp.json()
+                if "data" in result and isinstance(result["data"], list):
+                    image_url = result["data"][0]
+                    await message.answer_photo(photo=image_url)
+                    await message.answer("✨ اینم تصویرت عمو! بازم جمله بده تا بسازم برات!", reply_markup=retry_keyboard("search"))
+                else:
+                    await message.answer("😓 نشد عمو! یه چیز دیگه بفرست امتحان کنیم.")
     except Exception as e:
         await message.answer(f"❌ ارور در ساخت تصویر: {e}")
 
