@@ -348,17 +348,17 @@ async def handle_text2img(message: types.Message):
     prompt = message.text.strip()
     try:
         output = replicate_client.run(
-            "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
+            "stability-ai/stable-diffusion",
             input={"prompt": prompt}
         )
         if isinstance(output, list):
             for url in output:
                 await message.answer_photo(photo=url)
-            await message.answer("🎨 اینم تصویری که برات ساختم! بازم می‌خوای یه جمله دیگه بفرست.", reply_markup=retry_keyboard("search"))
+            await message.answer("🎨 اینم تصویری که با هوش مصنوعی ساختم عمو! بازم جمله بده بسازم برات ✨", reply_markup=retry_keyboard("search"))
         else:
-            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن.")
+            await message.answer("😓 نتونستم عکس بسازم. یه بار دیگه امتحان کن!")
     except Exception as e:
-        await message.answer(f"❌ خطا در ساخت تصویر: {e}")
+        await message.answer(f"❌ ارور در ساخت تصویر: {e}")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
