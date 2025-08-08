@@ -2,6 +2,7 @@ import os
 import json
 import random
 import aiohttp
+import replicate
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.utils import executor
@@ -22,25 +23,76 @@ CHANNEL_3_LINK = os.getenv("CHANNEL_3_LINK")
 UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
 PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
+# فایل‌ها
 POSTED_FILE = "posted.json"
 USED_FILE = "used_photos.json"
 USERS_FILE = "users.json"
 STATE_FILE = "search_state.json"
+HISTORY_FILE = "search_history.json"
+TEXT2IMG_STATE = "text2img_state.json"
 
+# ذخیره و بارگذاری
 def load_json(file):
     try:
-        with open(file, "r") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
         return {}
 
 def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f)
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+def ensure_file(file, default):
+    if not os.path.exists(file):
+        save_json(file, default)
+
+for file, default in [
+    (POSTED_FILE, {"photo_ids": []}),
+    (USED_FILE, {}),
+    (USERS_FILE, {}),
+    (STATE_FILE, {}),
+    (HISTORY_FILE, {}),
+    (TEXT2IMG_STATE, {})
+]: ensure_file(file, default)
+
+# کیبوردها
+main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
+    KeyboardButton("📸 عکس به سلیقه عمو"),
+    KeyboardButton("🔍 جستجوی دلخواه"),
+    KeyboardButton("🖌️ تبدیل متن به عکس"),
+    KeyboardButton("ℹ️ درباره من"),
+    KeyboardButton("💬 تماس با مالک عمو عکسی")
+)
+
+def retry_keyboard(mode):
+    kb = InlineKeyboardMarkup()
+    if mode == "random":
+        kb.add(
+            InlineKeyboardButton("🔁 درخواست مجدد", callback_data="random"),
+            InlineKeyboardButton("📡 رفتن به کانال عمو", url=CHANNEL_3_LINK)
+        )
+    elif mode == "search":
+        kb.add(
+            InlineKeyboardButton("🔁 جستجوی مجدد", callback_data="search"),
+            InlineKeyboardButton("📡 رفتن به کانال عمو", url=CHANNEL_3_LINK)
+        )
+    return kb
+
+def join_keyboard():
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("📢 کانال 1", url=CHANNEL_1_LINK))
+    kb.add(InlineKeyboardButton("📢 کانال 2", url=CHANNEL_2_LINK))
+    kb.add(InlineKeyboardButton("✅ عضو شدم عمو جون", callback_data="check_join"))
+    return kb
 
 async def check_membership(user_id):
     result = True
@@ -52,28 +104,6 @@ async def check_membership(user_id):
         except:
             result = False
     return result
-
-main_kb = ReplyKeyboardMarkup(resize_keyboard=True).add(
-    KeyboardButton("📸 عکس به سلیقه عمو"),
-    KeyboardButton("🔍 جستجوی دلخواه"),
-    KeyboardButton("ℹ️ درباره من"),
-    KeyboardButton("💬 تماس با مالک عمو عکسی")
-)
-
-def retry_keyboard(mode):
-    kb = InlineKeyboardMarkup()
-    if mode == "random":
-        kb.add(InlineKeyboardButton("🔁 درخواست مجدد", callback_data="random"))
-    elif mode == "search":
-        kb.add(InlineKeyboardButton("🔁 جستجوی مجدد", callback_data="search"))
-    return kb
-
-def join_keyboard():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("📢 کانال 1", url=CHANNEL_1_LINK))
-    kb.add(InlineKeyboardButton("📢 کانال 2", url=CHANNEL_2_LINK))
-    kb.add(InlineKeyboardButton("✅ عضو شدم عمو جون", callback_data="check_join"))
-    return kb
 
 @dp.message_handler(CommandStart())
 async def start(message: types.Message):
@@ -108,6 +138,7 @@ async def help_cmd(message: types.Message):
 /stats - نمایش تعداد کاربران
 /send - ارسال پیام همگانی (ریپلای روی پیام الزامی‌ست)
 /addphoto - افزودن عکس به حافظه ربات (باید روی عکس ریپلای کنی)
+/delphoto - پاکسازی عکس‌های حذف‌شده از کانال
         """)
 
 @dp.message_handler(commands=["stats"])
@@ -120,45 +151,49 @@ async def stats_cmd(message: types.Message):
 async def addphoto(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
-    if not message.reply_to_message:
-        await message.reply("⛔️ ریپ بزن کصخل نوب!")
+    if not message.reply_to_message or not message.reply_to_message.photo:
+        await message.reply("⛔️ باید روی یه عکس ریپلای کنی نوب جان!")
         return
-
-    if not message.reply_to_message.photo:
-        await message.reply("📛 باید عکس باشه کص مغز")
-        return
-
     try:
         sent = await bot.copy_message(
             chat_id=CHANNEL_4,
             from_chat_id=message.chat.id,
             message_id=message.reply_to_message.message_id
         )
-
         posted = load_json(POSTED_FILE)
         posted.setdefault("photo_ids", []).append(str(sent.message_id))
         save_json(POSTED_FILE, posted)
-
         await message.reply("📥با موفقیت رفت توش🙌")
     except Exception as e:
         await message.reply(f"❌ عمو کشید بالا نتونستم بکنمش: {e}")
+
+@dp.message_handler(commands=["delphoto"])
+async def delphoto(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    posted = load_json(POSTED_FILE).get("photo_ids", [])
+    alive = []
+    deleted = 0
+    for pid in posted:
+        try:
+            await bot.forward_message(message.chat.id, CHANNEL_4, int(pid))
+            alive.append(pid)
+        except:
+            deleted += 1
+    save_json(POSTED_FILE, {"photo_ids": alive})
+    await message.reply(f"🧹 تموم شد! {deleted} عکس پاک‌شده از لیست حذف شد.")
 
 @dp.message_handler(commands=["send"])
 async def send_cmd(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
     if not message.reply_to_message:
-        await message.reply("⛔️ هر بار یادت میره ریپ بزنی کصخلی یا ادا در میاری؟")
+        await message.reply("⛔️ هر بار یادت میره ریپ بزنی؟")
         return
-
     users = load_json(USERS_FILE)
     sent_count = 0
     error_count = 0
-
-    await message.reply("📤 دارم میدم دستشون عمو زیادن کصکشا...")
-
+    await message.reply("📤 دارم میدم دستشون عمو زیادن...")
     for uid in users:
         try:
             await bot.copy_message(
@@ -167,11 +202,9 @@ async def send_cmd(message: types.Message):
                 message_id=message.reply_to_message.message_id
             )
             sent_count += 1
-        except Exception as e:
-            print(f"❌ نشد {uid}: {e}")
+        except:
             error_count += 1
-
-    await message.reply(f"✅ دادمش دست {sent_count} نفر جات خالی\n❌ بلاک کردن بیناموسا {error_count} نفر.")
+    await message.reply(f"✅ ارسال شد به {sent_count} نفر\n❌ ارور در {error_count} مورد.")
 
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
@@ -191,42 +224,49 @@ async def send_random(message, user_id):
     used = load_json(USED_FILE)
     available = list(set(posted) - set(used.get(str(user_id), [])))
 
-    if not available:
-        kb = InlineKeyboardMarkup().add(
-            InlineKeyboardButton("📡 رفتن به کانال عمو عکسی", url=CHANNEL_3_LINK)
-        )
-        await message.answer("😅 تموم دیگه عمو عکس عمه منو نمیخوای؟ بریم تو کانالم یه دوری بزنیم پر عکسه", reply_markup=kb)
-        return
+    while available:
+        selected = random.choice(available)
+        try:
+            await bot.copy_message(
+                chat_id=user_id,
+                from_chat_id=CHANNEL_4,
+                message_id=int(selected)
+            )
+            used.setdefault(str(user_id), []).append(selected)
+            save_json(USED_FILE, used)
+            await message.answer("🎁 اینم یه عکس به سلیقه عمو عکسی برو برا رفیقات تعریف کن", reply_markup=retry_keyboard("random"))
+            return
+        except:
+            available.remove(selected)
 
-    selected = random.choice(available)
-    try:
-        await bot.copy_message(
-            chat_id=user_id,
-            from_chat_id=CHANNEL_4,
-            message_id=int(selected)
-        )
-        used.setdefault(str(user_id), []).append(selected)
-        save_json(USED_FILE, used)
-        await message.answer("🎁 اینم یه عکس به سلیقه عمو عکسی برو برا رفیقات تعریف کن", reply_markup=retry_keyboard("random"))
-    except Exception as e:
-        await message.answer(f"⛔️ مشکلی پیش اومد عمو: {e}")
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("📡 رفتن به کانال عمو عکسی", url=CHANNEL_3_LINK)
+    )
+    await message.answer("😅 تموم شد عمو! دیگه عکسی نمونده که قبلاً ندیده باشی. بریم یه چرخی تو کانالم بزنیم؟", reply_markup=kb)
 
 @dp.message_handler()
 async def handle_message(message: types.Message):
+    uid = str(message.from_user.id)
     if message.text == "📸 عکس به سلیقه عمو":
         if not await check_membership(message.from_user.id):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard())
             return
-        await send_random(message, message.from_user.id)
+        await send_random(message, uid)
 
     elif message.text == "🔍 جستجوی دلخواه":
         if not await check_membership(message.from_user.id):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard())
             return
         state = load_json(STATE_FILE)
-        state[str(message.from_user.id)] = True
+        state[uid] = True
         save_json(STATE_FILE, state)
         await message.reply("🔍 خب عمو، یه کلمه بفرست برات عکس بیارم!")
+
+    elif message.text == "🖌️ تبدیل متن به عکس":
+        state = load_json(TEXT2IMG_STATE)
+        state[uid] = True
+        save_json(TEXT2IMG_STATE, state)
+        await message.reply("🎨 خب عمو، یه جمله بهم بده تا با هوش مصنوعی برات یه عکس توپ بسازم!")
 
     elif message.text == "ℹ️ درباره من":
         await message.reply("👴 من عمو عکسی‌ام که هر عکسی بخوای دارم! باحال‌ترین ربات دنیای فارسی!")
@@ -236,21 +276,37 @@ async def handle_message(message: types.Message):
 
     else:
         state = load_json(STATE_FILE)
-        if state.get(str(message.from_user.id)):
-            state[str(message.from_user.id)] = False
+        if state.get(uid):
+            state[uid] = False
             save_json(STATE_FILE, state)
             await message.reply("⏳ صبر کن عمو... دارم عکسای ناب برات پیدا می‌کنم...")
             await handle_search(message)
+            return
+
+        t2i = load_json(TEXT2IMG_STATE)
+        if t2i.get(uid):
+            t2i[uid] = False
+            save_json(TEXT2IMG_STATE, t2i)
+            await message.reply("🧠 دارم فکر می‌کنم...")
+            await handle_text2img(message)
 
 async def handle_search(message: types.Message):
+    uid = str(message.from_user.id)
     query = message.text
     photos = await search_photos(query)
-    if photos:
-        media = [InputMediaPhoto(url) for url in photos]
+
+    history = load_json(HISTORY_FILE)
+    seen = history.get(uid, {}).get(query, [])
+    new_photos = [url for url in photos if url not in seen]
+
+    if new_photos:
+        history.setdefault(uid, {}).setdefault(query, []).extend(new_photos)
+        save_json(HISTORY_FILE, history)
+        media = [InputMediaPhoto(url) for url in new_photos[:10]]
         await message.answer_media_group(media)
         await message.answer("📷 اینا رو تونستم برات پیدا کنم صفا باشه عمو!", reply_markup=retry_keyboard("search"))
     else:
-        await message.answer("😢 چیزی پیدا نکردم. یه کلمه دیگه بفرست یا دوباره تلاش کن!", reply_markup=retry_keyboard("search"))
+        await message.answer("😕 عکسی جدیدی برای این موضوع ندارم عمو. یه چیز دیگه بفرست!")
 
 async def search_photos(query):
     urls = []
@@ -259,7 +315,7 @@ async def search_photos(query):
             u = f"https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_ACCESS_KEY}&count=3"
             async with s.get(u) as r:
                 data = await r.json()
-                urls += [d['urls']['regular'] for d in data]
+                urls += [d['urls']['regular'] for d in data if 'urls' in d]
         except: pass
         try:
             h = {"Authorization": PEXELS_API_KEY}
@@ -275,6 +331,22 @@ async def search_photos(query):
                 urls += [h['webformatURL'] for h in data.get('hits', [])]
         except: pass
     return urls[:10]
+
+async def handle_text2img(message: types.Message):
+    prompt = message.text
+    try:
+        output = replicate_client.run(
+            "stability-ai/stable-diffusion:db21e45a3d3703b3ce68c479ec9be29b23a464df1c8c0d3b55b8b427d60e17e3",
+            input={"prompt": prompt}
+        )
+        if isinstance(output, list):
+            for url in output:
+                await message.answer_photo(photo=url)
+            await message.answer("🎨 اینم تصویری که با هوش مصنوعی ساختم! اگه بازم می‌خوای، دوباره بگو.", reply_markup=retry_keyboard("search"))
+        else:
+            await message.answer("😓 نشد عمو. یه چیزی اشتباه شد. یه بار دیگه امتحان کن.")
+    except Exception as e:
+        await message.answer(f"❌ اوه نه! یه مشکلی پیش اومد موقع ساخت تصویر: {e}")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
