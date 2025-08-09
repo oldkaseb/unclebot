@@ -372,84 +372,95 @@ async def topqueries(message: types.Message):
 
 # === part 4: artistic/cinematic search (no portrait/orientation) ===
 async def search_photos(query, page=1):
-    # پسوند هنری و سینمایی – بدون "portrait"
+    # استایل ثابت هنری/سینمایی (بدون هیچ ضدچهره‌ای)
     suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, 85mm, film look"
     q = f"{query}{suffix}"
 
     urls = []
     async with aiohttp.ClientSession() as s:
-        # Unsplash (بدون orientation)
+        # ---- Unsplash ----
         try:
-            u = ("https://api.unsplash.com/search/photos"
-                 f"?query={q}&page={page}&per_page=12"
-                 "&order_by=relevant&content_filter=high"
-                 f"&client_id={UNSPLASH_ACCESS_KEY}")
+            u = (
+                "https://api.unsplash.com/search/photos"
+                f"?query={q}&page={page}&per_page=12"
+                "&order_by=relevant&content_filter=high"
+                f"&client_id={UNSPLASH_ACCESS_KEY}"
+            )
             async with s.get(u) as r:
                 data = await r.json()
-                urls += [d['urls']['regular'] for d in data.get('results', []) if 'urls' in d]
+                for d in data.get("results", []):
+                    ureg = d.get("urls", {}).get("regular")
+                    if ureg:
+                        urls.append(ureg)
         except:
             pass
 
-        # Pexels (فقط size=large)
+        # ---- Pexels ----
         try:
-            h = {"Authorization": PEXELS_API_KEY}
-            u = ("https://api.pexels.com/v1/search"
-                 f"?query={q}&per_page=12&page={page}"
-                 "&size=large")
-            async with s.get(u, headers=h) as r:
+            headers = {"Authorization": PEXELS_API_KEY}
+            u = (
+                "https://api.pexels.com/v1/search"
+                f"?query={q}&page={page}&per_page=12"
+                "&size=large"
+            )
+            async with s.get(u, headers=headers) as r:
                 data = await r.json()
-                for p in data.get('photos', []):
-                    urls.append(p['src'].get('large') or p['src'].get('medium'))
+                for p in data.get("photos", []):
+                    urls.append(p["src"].get("large") or p["src"].get("medium"))
         except:
             pass
 
-        # Pixabay (بدون orientation)
+        # ---- Pixabay ----
         try:
-            u = ("https://pixabay.com/api/"
-                 f"?key={PIXABAY_API_KEY}&q={q}"
-                 f"&page={page}&per_page=12"
-                 "&image_type=photo&safesearch=true&order=popular&editors_choice=true")
+            u = (
+                "https://pixabay.com/api/"
+                f"?key={PIXABAY_API_KEY}&q={q}"
+                f"&page={page}&per_page=12"
+                "&image_type=photo&safesearch=true&order=popular&editors_choice=true"
+            )
             async with s.get(u) as r:
                 data = await r.json()
-                for h in data.get('hits', []):
-                    urls.append(h.get('webformatURL'))
+                for h in data.get("hits", []):
+                    if h.get("webformatURL"):
+                        urls.append(h["webformatURL"])
         except:
             pass
 
-    # de-dup batch
-    uniq, seen = [], set()
+    # حذف تکراری‌های همین نوبت
+    seen, unique = set(), []
     for u in urls:
         if u and u not in seen:
-            uniq.append(u); seen.add(u)
-    return uniq
+            seen.add(u)
+            unique.append(u)
+    return unique
+
 
 async def handle_search(message: types.Message):
     uid = int(message.from_user.id)
-    query = message.text.strip().lower()
+    query = (message.text or "").strip().lower()
 
+    # اول یک صفحه رندوم
     page = random.randint(1, 5)
-    all_photos = await search_photos(query, page=page)
+    batch1 = await search_photos(query, page=page)
 
-    unique_now = []
-    for u in all_photos:
-        if not await has_seen_url(uid, query, u) and u not in unique_now:
-            unique_now.append(u)
-
-    if not unique_now:
+    # فیلتر با تاریخچه دیتابیس (هیچ‌وقت تکراری نشه)
+    fresh = [u for u in batch1 if not await has_seen_url(uid, query, u)]
+    if not fresh:
+        # اگر چیزی تازه نبود، صفحه‌های دیگر را امتحان کن
         page2 = random.randint(6, 12)
-        all_photos2 = await search_photos(query, page=page2)
-        for u in all_photos2:
-            if not await has_seen_url(uid, query, u) and u not in unique_now:
-                unique_now.append(u)
+        batch2 = await search_photos(query, page=page2)
+        fresh = [u for u in batch2 if not await has_seen_url(uid, query, u)]
 
-    if not unique_now:
-        await message.reply("😕 برای این موضوع عکس جدید ندارم. یه چیز دیگه جستجو کن!", reply_markup=retry_keyboard("search"))
+    if not fresh:
+        await message.reply("😕 برای این موضوع عکس تازه ندارم. یه چیز دیگه جستجو کن!", reply_markup=retry_keyboard("search"))
         return
 
-    await store_seen_urls(uid, query, unique_now)
-    media = [InputMediaPhoto(url) for url in unique_now[:10]]
+    # ذخیره در تاریخچه تا دفعات بعدی تکراری نشه
+    await store_seen_urls(uid, query, fresh)
+
+    media = [InputMediaPhoto(u) for u in fresh[:10]]
     await message.answer_media_group(media)
-    await message.answer("📷 اینا رو تونستم برات پیدا کنم — حالت هنری/سینمایی فعاله!", reply_markup=retry_keyboard("search"))
+    await message.answer("🎬 حالت هنری/سینمایی فعاله — اگه بازم می‌خوای، دوباره جستجو کن!", reply_markup=retry_keyboard("search"))
 
 # === part 5: random three + callbacks + main text handler ===
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
