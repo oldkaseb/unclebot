@@ -87,8 +87,7 @@ def in_search_mode(user_id: int) -> bool:
     if time.time() - ts > SEARCH_TIMEOUT:
         SEARCH_MODE.pop(user_id, None)
         return False
-    # touch
-    SEARCH_MODE[user_id] = time.time()
+    SEARCH_MODE[user_id] = time.time()  # touch
     return True
 
 
@@ -223,6 +222,38 @@ async def start(message: types.Message):
         await message.answer("🎉 سلام عمو! یکی از دکمه‌ها رو بزن:", reply_markup=main_kb)
     else:
         await message.answer("👋 اول باید عضو هر دو کانال شی:", reply_markup=join_keyboard())
+
+@dp.message_handler(commands=['help'])
+async def help_cmd(message: types.Message):
+    if await is_admin(message.from_user.id):
+        await message.reply(
+            "🛠 راهنمای ادمین:\n"
+            "/whoami — نمایش آیدی و وضعیت ادمین\n"
+            "/whoadmins — لیست ادمین‌ها\n"
+            "/addadmin <user_id> — افزودن ادمین\n"
+            "/deladmin <user_id> — حذف ادمین\n"
+            "/send — ارسال همگانی (روی پیام ریپلای کنید؛ آلبوم هم پشتیبانی)\n"
+            "/addphoto — افزودن عکس به خزانه (روی عکس ریپلای)\n"
+            "/delphoto — پاکسازی عکس‌های حذف‌شدهٔ کانال ۴\n"
+            "/dbstats — آمار دیتابیس\n"
+            "/topqueries — برترین جستجوها (۷ روز)\n"
+            "/cancel — خروج از حالت جستجو"
+        )
+    else:
+        await message.reply(
+            "سلام 👋\n"
+            "از دکمه‌ها استفاده کن:\n"
+            "• 📸 عکس به سلیقه عمو\n"
+            "• 🔍 جستجوی دلخواه\n"
+            "• ℹ️ درباره من\n"
+            "• 💬 تماس با مالک عمو عکسی\n"
+            "و هر وقت خواستی از حالت جستجو بیای بیرون: /cancel"
+        )
+
+@dp.message_handler(commands=['whoami'])
+async def whoami(message: types.Message):
+    admin = await is_admin(message.from_user.id)
+    await message.reply(f"👤 user_id: {message.from_user.id}\n👮 admin: {'YES' if admin else 'NO'}")
 
 @dp.callback_query_handler(lambda c: c.data == "check_join")
 async def check_join(call: types.CallbackQuery):
@@ -473,7 +504,6 @@ async def handle_search(message: types.Message):
     # فیلتر با تاریخچه دیتابیس (هیچ‌وقت تکراری نشه)
     fresh = [u for u in batch1 if not await has_seen_url(uid, query, u)]
     if not fresh:
-        # اگر چیزی تازه نبود، صفحه‌های دیگر را امتحان کن
         page2 = random.randint(6, 12)
         batch2 = await search_photos(query, page=page2)
         fresh = [u for u in batch2 if not await has_seen_url(uid, query, u)]
@@ -482,7 +512,6 @@ async def handle_search(message: types.Message):
         await message.reply("😕 برای این موضوع عکس تازه ندارم. یه چیز دیگه جستجو کن!", reply_markup=retry_keyboard("search"))
         return
 
-    # ذخیره در تاریخچه تا دفعات بعدی تکراری نشه
     await store_seen_urls(uid, query, fresh)
 
     media = [InputMediaPhoto(u) for u in fresh[:10]]
