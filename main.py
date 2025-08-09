@@ -618,7 +618,7 @@ async def topqueries(message: types.Message):
 # ---------- Artistic/Cinematic Search ----------
 async def search_photos(query, page=1):
     # استایل ثابت هنری/سینمایی
-    suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, film look"
+    suffix = ", aesthetic"
     q = f"{query}{suffix}"
 
     urls = []
