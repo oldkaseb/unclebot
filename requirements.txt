@@ -3,3 +3,4 @@ aiohttp
 replicate==0.24.0
 sqlalchemy
 psycopg2-binary
+asyncpg
