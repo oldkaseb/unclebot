@@ -70,6 +70,28 @@ def join_keyboard():
 ALBUM_CACHE = defaultdict(lambda: {"ts": 0, "media": []})
 ALBUM_CACHE_TTL = 600  # ثانیه
 
+# --- Search mode state (in-memory) ---
+SEARCH_MODE = {}  # user_id -> last_activity_ts
+SEARCH_TIMEOUT = 600  # ثانیه؛ بعدش خودکار از مود خارج می‌شه
+
+def enter_search_mode(user_id: int):
+    SEARCH_MODE[user_id] = time.time()
+
+def exit_search_mode(user_id: int):
+    SEARCH_MODE.pop(user_id, None)
+
+def in_search_mode(user_id: int) -> bool:
+    ts = SEARCH_MODE.get(user_id)
+    if not ts:
+        return False
+    if time.time() - ts > SEARCH_TIMEOUT:
+        SEARCH_MODE.pop(user_id, None)
+        return False
+    # touch
+    SEARCH_MODE[user_id] = time.time()
+    return True
+
+
 # === part 2: database schema + helpers + admin decorator ===
 PG_POOL = None
 
@@ -180,6 +202,7 @@ def admin_only(fn):
             return
         return await fn(message, *a, **kw)
     return wrapper
+
 
 # === part 3: membership, start, album cache, admin commands ===
 async def check_membership(user_id):
@@ -370,10 +393,11 @@ async def topqueries(message: types.Message):
     lines = [f"{i+1}. {r['query']} — {r['c']}" for i, r in enumerate(rows)]
     await message.reply("🏆 Top queries (7d):\n" + "\n".join(lines))
 
+
 # === part 4: artistic/cinematic search (no portrait/orientation) ===
 async def search_photos(query, page=1):
-    # استایل ثابت هنری/سینمایی (بدون هیچ ضدچهره‌ای)
-    suffix = ", aesthetic, soft lighting, shallow depth of field"
+    # استایل ثابت هنری/سینمایی (بدون هیچ ضدچهره‌ای و بدون محدودیت orientation)
+    suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, film look"
     q = f"{query}{suffix}"
 
     urls = []
@@ -436,6 +460,9 @@ async def search_photos(query, page=1):
 
 
 async def handle_search(message: types.Message):
+    # تمدید تایم‌اوت مود جستجو
+    SEARCH_MODE[message.from_user.id] = time.time()
+
     uid = int(message.from_user.id)
     query = (message.text or "").strip().lower()
 
@@ -462,6 +489,7 @@ async def handle_search(message: types.Message):
     await message.answer_media_group(media)
     await message.answer("🎬اگه بازم می‌خوای، دوباره جستجو کن", reply_markup=retry_keyboard("search"))
 
+
 # === part 5: random three + callbacks + main text handler ===
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
@@ -471,6 +499,7 @@ async def retry_handler(call: types.CallbackQuery):
     if call.data == "random":
         await send_random(call.message, call.from_user.id)
     elif call.data == "search":
+        enter_search_mode(call.from_user.id)
         await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم!")
 
 async def send_random(message, user_id):
@@ -494,32 +523,51 @@ async def send_random(message, user_id):
     else:
         await message.answer("⛔️ مشکلی پیش اومد، دوباره امتحان کن")
 
+@dp.message_handler(commands=['cancel'])
+async def cancel_search(message: types.Message):
+    exit_search_mode(message.from_user.id)
+    await message.reply("✅ از حالت جستجو خارج شدی.", reply_markup=main_kb)
+
 @dp.message_handler()
 async def handle_message(message: types.Message):
     uid = int(message.from_user.id)
     txt = (message.text or "").strip()
 
     if txt == "📸 عکس به سلیقه عمو":
+        exit_search_mode(uid)
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
         await send_random(message, uid)
+        return
 
     elif txt == "🔍 جستجوی دلخواه":
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
+        enter_search_mode(uid)
         await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم")
+        return
 
     elif txt == "ℹ️ درباره من":
+        exit_search_mode(uid)
         await message.reply("👴 من عمو عکسی‌ام! دنیای بینهایتی از عکس دارم همش به سبک جستجوی تو بستگی داره")
+        return
 
     elif txt == "💬 تماس با مالک عمو عکسی":
+        exit_search_mode(uid)
         await message.reply("📮 برای صحبت با مالک عمو عکسی: @soulsownerbot")
+        return
 
-    else:
+    # فقط وقتی در حالت جستجو هست، هر متنِ آزاد = کوئری
+    if in_search_mode(uid):
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
         await message.reply("⏳ صبر کن... دارم عکسای ناب پیدا می‌کنم...")
         await handle_search(message)
+        return
+
+    # خارج از حالت جستجو: پیام آزاد → راهنمایی
+    await message.reply("برای جستجو دکمه «🔍 جستجوی دلخواه» رو بزن یا /cancel برای خروج از مودها.", reply_markup=main_kb)
+
 
 # === part 6: startup ===
 async def on_startup(dp):
