@@ -365,7 +365,7 @@ async def topqueries(message: types.Message):
         LIMIT 10
     """)
     if not rows:
-        await message.reply("🔎 این هفته کوئری نداریم.")
+        await message.reply("🔎 این هفته نداریم.")
         return
     lines = [f"{i+1}. {r['query']} — {r['c']}" for i, r in enumerate(rows)]
     await message.reply("🏆 Top queries (7d):\n" + "\n".join(lines))
@@ -373,7 +373,7 @@ async def topqueries(message: types.Message):
 # === part 4: artistic/cinematic search (no portrait/orientation) ===
 async def search_photos(query, page=1):
     # استایل ثابت هنری/سینمایی (بدون هیچ ضدچهره‌ای)
-    suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, 85mm, film look"
+    suffix = ", aesthetic, soft lighting, shallow depth of field"
     q = f"{query}{suffix}"
 
     urls = []
@@ -460,7 +460,7 @@ async def handle_search(message: types.Message):
 
     media = [InputMediaPhoto(u) for u in fresh[:10]]
     await message.answer_media_group(media)
-    await message.answer("🎬 حالت هنری/سینمایی فعاله — اگه بازم می‌خوای، دوباره جستجو کن!", reply_markup=retry_keyboard("search"))
+    await message.answer("🎬اگه بازم می‌خوای، دوباره جستجو کن", reply_markup=retry_keyboard("search"))
 
 # === part 5: random three + callbacks + main text handler ===
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
@@ -479,7 +479,7 @@ async def send_random(message, user_id):
         kb = InlineKeyboardMarkup().add(
             InlineKeyboardButton("📡 رفتن به کانال عمو عکسی", url=CHANNEL_3_LINK)
         )
-        await message.answer("😅 فعلاً عکس جدیدی ندارم. یه سر به کانال بزن!", reply_markup=kb)
+        await message.answer("😅 مونده عکس عمه عکسی رو ببینی دیگه. یه سر به کانال بزن!", reply_markup=kb)
         return
     sent_any = False
     for mid in picks:
@@ -490,9 +490,9 @@ async def send_random(message, user_id):
         except:
             await db_execute("DELETE FROM posted_photos WHERE message_id=$1", int(mid))
     if sent_any:
-        await message.answer("🎁 اینم سه‌تایی از سلیقه عمو 😎", reply_markup=retry_keyboard("random"))
+        await message.answer("🎁 اینم از کانال عمو عکسی 😎", reply_markup=retry_keyboard("random"))
     else:
-        await message.answer("⛔️ مشکلی پیش اومد، بعداً دوباره امتحان کن.")
+        await message.answer("⛔️ مشکلی پیش اومد، دوباره امتحان کن")
 
 @dp.message_handler()
 async def handle_message(message: types.Message):
@@ -507,13 +507,13 @@ async def handle_message(message: types.Message):
     elif txt == "🔍 جستجوی دلخواه":
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
-        await message.reply("🔎 خب عمو، یه کلمه بفرست برات هنری و سینمایی بیارم!")
+        await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم")
 
     elif txt == "ℹ️ درباره من":
-        await message.reply("👴 من عمو عکسی‌ام! عکسای باحال، بدون تکرار!")
+        await message.reply("👴 من عمو عکسی‌ام! دنیای بینهایتی از عکس دارم همش به سبک جستجوی تو بستگی داره")
 
     elif txt == "💬 تماس با مالک عمو عکسی":
-        await message.reply("📮 برای صحبت با صاحب عمو عکسی: @soulsownerbot")
+        await message.reply("📮 برای صحبت با مالک عمو عکسی: @soulsownerbot")
 
     else:
         if not await check_membership(uid):
