@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton,
-    InputMediaPhoto
+    InputMediaPhoto, BotCommand
 )
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
@@ -557,6 +557,13 @@ async def cancel_search(message: types.Message):
     exit_search_mode(message.from_user.id)
     await message.reply("✅ از حالت جستجو خارج شدی.", reply_markup=main_kb)
 
+# ⚠️ دیباگ: ببینیم اصلاً کامند به ربات می‌رسه یا نه
+@dp.message_handler(lambda m: m.text and m.text.startswith('/'))
+async def debug_commands(message: types.Message):
+    # اگر /help یا /whoami توسط هندلر خودش گرفته نشه، اینجا حداقل جواب می‌ده
+    if message.text not in ['/help', '/whoami', '/dbstats', '/topqueries', '/addadmin', '/deladmin', '/send', '/addphoto', '/delphoto', '/cancel', '/start']:
+        await message.reply(f"DBG got command: {message.text}")
+
 @dp.message_handler()
 async def handle_message(message: types.Message):
     uid = int(message.from_user.id)
@@ -602,6 +609,22 @@ async def handle_message(message: types.Message):
 async def on_startup(dp):
     await init_db()
     await ensure_initial_admin()
+    # منو/کامندها رو ست کن تا تو کلاینت دیده بشن
+    await bot.set_my_commands([
+        BotCommand("start", "شروع"),
+        BotCommand("help", "راهنما"),
+        BotCommand("whoami", "نمایش آیدی و وضعیت ادمین"),
+        BotCommand("cancel", "خروج از حالت جستجو"),
+        BotCommand("send", "ارسال همگانی (ادمین)"),
+        BotCommand("addphoto", "افزودن عکس به خزانه (ادمین)"),
+        BotCommand("delphoto", "پاکسازی لیست عکس‌ها (ادمین)"),
+        BotCommand("whoadmins", "لیست ادمین‌ها (ادمین)"),
+        BotCommand("addadmin", "افزودن ادمین (ادمین)"),
+        BotCommand("deladmin", "حذف ادمین (ادمین)"),
+        BotCommand("dbstats", "آمار دیتابیس (ادمین)"),
+        BotCommand("topqueries", "برترین جستجوها (ادمین)")
+    ])
 
 if __name__ == "__main__":
+    # مطمئن شو فقط یک سرویس با همین BOT_TOKEN فعاله
     executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
