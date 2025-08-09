@@ -1,10 +1,12 @@
-# === main.py — Final with DB guards ===
+# === main.py — Final with robust Postgres handling ===
 import os
 import random
 import time
 import aiohttp
 import asyncpg
 import logging
+import ssl
+from urllib.parse import urlparse
 
 from collections import defaultdict
 from aiogram import Bot, Dispatcher, types
@@ -15,7 +17,6 @@ from aiogram.types import (
 )
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
-from aiogram.utils.exceptions import TelegramAPIError
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +100,7 @@ def in_search_mode(user_id: int) -> bool:
 # ---------- DB ----------
 PG_POOL = None
 DB_READY = False
+LAST_DB_ERROR = None  # برای /pgdiag
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -137,43 +139,121 @@ CREATE TABLE IF NOT EXISTS admins (
 );
 """
 
-async def init_db():
-    global PG_POOL
-    PG_POOL = await asyncpg.create_pool(PG_DSN, min_size=1, max_size=5)
-    async with PG_POOL.acquire() as conn:
-        await conn.execute(SCHEMA_SQL)
+def _build_dsn_from_parts():
+    """اگر DATABASE_URL نبود، از متغیرهای تکی DSN بساز."""
+    host = os.getenv("PGHOST")
+    port = os.getenv("PGPORT", "5432")
+    db   = os.getenv("PGDATABASE")
+    user = os.getenv("PGUSER")
+    pwd  = os.getenv("PGPASSWORD")
+    if host and db and user and pwd:
+        return f"postgresql://{user}:{pwd}@{host}:{port}/{db}"
+    return None
 
-async def ensure_initial_admin():
-    if INITIAL_ADMIN:
-        await db_execute("INSERT INTO admins(user_id) VALUES($1) ON CONFLICT DO NOTHING", INITIAL_ADMIN)
+def _mask_dsn(dsn: str) -> str:
+    try:
+        u = urlparse(dsn)
+        masked_user = (u.username or "")
+        return f"{u.scheme}://{masked_user}:***@{u.hostname}:{u.port}{u.path}"
+    except:
+        return "***"
 
-async def db_execute(sql, *args):
-    async with PG_POOL.acquire() as conn:
-        return await conn.execute(sql, *args)
-
-async def db_fetch(sql, *args):
-    async with PG_POOL.acquire() as conn:
-        return await conn.fetch(sql, *args)
-
-async def db_fetchval(sql, *args):
-    async with PG_POOL.acquire() as conn:
-        return await conn.fetchval(sql, *args)
+async def _create_pool(dsn: str, ssl_ctx):
+    # پارامترهای پایداری برای جلوگیری از reset by peer
+    return await asyncpg.create_pool(
+        dsn,
+        min_size=1,
+        max_size=5,
+        ssl=ssl_ctx,
+        command_timeout=30,
+        max_inactive_connection_lifetime=60,
+        statement_cache_size=0,
+    )
 
 async def safe_init_db():
-    """Init DB safely and set DB_READY with logs."""
-    global DB_READY
+    """Init DB safely with SSL/Non-SSL fallback and clear logs."""
+    global DB_READY, PG_DSN, LAST_DB_ERROR, PG_POOL
+    LAST_DB_ERROR = None
+
+    # اگر DATABASE_URL نبود، از قطعات بساز
+    if not PG_DSN:
+        PG_DSN = _build_dsn_from_parts()
+
     if not PG_DSN:
         DB_READY = False
-        logging.error("DATABASE_URL not set. Admin/DB-backed commands will not work.")
+        LAST_DB_ERROR = "DATABASE_URL/PGHOST… تعریف نشده."
+        logging.error("DATABASE_URL not set and no PGHOST/PGUSER/… found.")
         return
+
+    masked = _mask_dsn(PG_DSN)
+    logging.info("Trying DB connect: %s", masked)
+
+    # 1) تست با SSL
     try:
-        await init_db()
-        await ensure_initial_admin()
+        ssl_ctx = ssl.create_default_context()
+        PG_POOL = await _create_pool(PG_DSN, ssl_ctx)
+        async with PG_POOL.acquire() as conn:
+            await conn.execute("SELECT 1")
         DB_READY = True
-        logging.info("DB connected and ready.")
-    except Exception as e:
+        logging.info("DB connected with SSL.")
+        return
+    except Exception as e_ssl:
+        logging.warning("DB SSL connect failed: %s", e_ssl)
+        LAST_DB_ERROR = f"SSL connect failed: {e_ssl}"
+
+    # 2) تست بدون SSL
+    try:
+        PG_POOL = await _create_pool(PG_DSN, None)
+        async with PG_POOL.acquire() as conn:
+            await conn.execute("SELECT 1")
+        DB_READY = True
+        LAST_DB_ERROR = None
+        logging.info("DB connected WITHOUT SSL.")
+        return
+    except Exception as e_nossl:
         DB_READY = False
-        logging.exception("DB init failed: %s", e)
+        LAST_DB_ERROR = f"Non-SSL connect failed: {e_nossl}"
+        logging.exception("DB init failed (no SSL): %s", e_nossl)
+
+async def _recreate_pool():
+    global PG_POOL
+    if PG_POOL:
+        try:
+            await PG_POOL.close()
+        except:
+            pass
+    PG_POOL = None
+    await safe_init_db()
+
+async def db_execute(sql, *args):
+    try:
+        async with PG_POOL.acquire() as conn:
+            return await conn.execute(sql, *args)
+    except (asyncpg.PostgresError, ConnectionError, OSError) as e:
+        logging.warning("db_execute retry after pool recreate: %s", e)
+        await _recreate_pool()
+        async with PG_POOL.acquire() as conn:
+            return await conn.execute(sql, *args)
+
+async def db_fetch(sql, *args):
+    try:
+        async with PG_POOL.acquire() as conn:
+            return await conn.fetch(sql, *args)
+    except (asyncpg.PostgresError, ConnectionError, OSError) as e:
+        logging.warning("db_fetch retry after pool recreate: %s", e)
+        await _recreate_pool()
+        async with PG_POOL.acquire() as conn:
+            return await conn.fetch(sql, *args)
+
+async def db_fetchval(sql, *args):
+    try:
+        async with PG_POOL.acquire() as conn:
+            return await conn.fetchval(sql, *args)
+    except (asyncpg.PostgresError, ConnectionError, OSError) as e:
+        logging.warning("db_fetchval retry after pool recreate: %s", e)
+        await _recreate_pool()
+        async with PG_POOL.acquire() as conn:
+            return await conn.fetchval(sql, *args)
 
 # CRUD helpers
 async def upsert_user(u: types.User):
@@ -239,7 +319,7 @@ def admin_only(fn):
 def require_db(fn):
     async def wrapper(message: types.Message, *a, **kw):
         if not DB_READY:
-            await message.reply("⛔️ دیتابیس در دسترس نیست. `DATABASE_URL` را تنظیم کن و ری‌دیپلوی کن. /debug را هم بزن.")
+            await message.reply("⛔️ دیتابیس در دسترس نیست. `DATABASE_URL` را تنظیم کن و ری‌دیپلوی کن. /pgdiag و /debug را هم بزن.")
             return
         try:
             return await fn(message, *a, **kw)
@@ -288,7 +368,8 @@ async def help_cmd(message: types.Message):
             "• /dbstats — آمار دیتابیس\n"
             "• /topqueries — برترین جستجوها (۷ روز)\n"
             "• /cancel — خروج از حالت جستجو\n"
-            "• /debug — وضعیت ادمین/کانال/DB\n\n"
+            "• /debug — وضعیت ادمین/کانال/DB\n"
+            "• /pgdiag — عیب‌یابی اتصال دیتابیس\n\n"
             "کلیدها:\n"
             "📸 عکس به سلیقه عمو — ۳ عکس تصادفی جدید\n"
             "🔍 جستجوی دلخواه — جستجو با استایل هنری/سینمایی و بدون تکرار"
@@ -330,6 +411,16 @@ async def debug_cmd(message: types.Message):
         f"• channels joined: {'YES' if member_ok else 'NO'}\n"
         f"• db: {'OK' if db_ok else 'ERROR'}"
     )
+
+@dp.message_handler(commands=['pgdiag'])
+async def pgdiag(message: types.Message):
+    masked = _mask_dsn(os.getenv("DATABASE_URL") or _build_dsn_from_parts() or "")
+    details = [
+        f"DB_READY: {'YES' if DB_READY else 'NO'}",
+        f"DSN: {masked or '(not set)'}",
+        f"LAST_DB_ERROR: {LAST_DB_ERROR or '(none)'}",
+    ]
+    await message.reply("🩺 PG Diag:\n" + "\n".join(details))
 
 @dp.callback_query_handler(lambda c: c.data == "check_join")
 async def check_join(call: types.CallbackQuery):
@@ -501,7 +592,7 @@ async def dbstats(message: types.Message):
     except Exception as e:
         logging.exception("dbstats failed: %s", e)
         await message.reply(f"❌ خطا در آمار: {e}\n"
-                            "🔧 اگر تازه دیپلوی کردی، یک بار /debug رو بزن و وضعیت DB رو ببین.")
+                            "🔧 /pgdiag را بزن تا وضعیت اتصال مشخص شود.")
 
 @dp.message_handler(commands=['topqueries'])
 @admin_only
@@ -659,7 +750,7 @@ async def cancel_search(message: types.Message):
 # ---------- Unknown command feedback ----------
 @dp.message_handler(lambda m: m.text and m.text.startswith('/') and m.text.split()[0] not in [
     '/start','/help','/whoami','/dbstats','/topqueries','/addadmin','/deladmin',
-    '/send','/addphoto','/delphoto','/cancel','/ping','/debug','/whoadmins'
+    '/send','/addphoto','/delphoto','/cancel','/ping','/debug','/whoadmins','/pgdiag'
 ])
 async def unknown_command(message: types.Message):
     await message.reply(f"❓ این دستور شناخته نشد: {message.text}\n/help رو بزن.")
@@ -716,15 +807,14 @@ async def global_errors_handler(update, error):
 
 # ---------- Startup ----------
 async def on_startup(dp):
-    # init DB safely
     await safe_init_db()
 
-    # register bot commands
     await bot.set_my_commands([
         BotCommand("start", "شروع"),
         BotCommand("help", "راهنما"),
         BotCommand("whoami", "نمایش آیدی و وضعیت ادمین"),
         BotCommand("debug", "وضعیت ادمین/کانال/DB"),
+        BotCommand("pgdiag", "عیب‌یابی اتصال دیتابیس"),
         BotCommand("cancel", "خروج از حالت جستجو"),
         BotCommand("send", "ارسال همگانی (ادمین)"),
         BotCommand("addphoto", "افزودن عکس به خزانه (ادمین)"),
@@ -741,9 +831,9 @@ async def on_startup(dp):
     try:
         if INITIAL_ADMIN:
             if DB_READY:
-                await bot.send_message(INITIAL_ADMIN, "✅ Bot started. DB: OK\n/whoami /debug /help")
+                await bot.send_message(INITIAL_ADMIN, "✅ Bot started. DB: OK\n/whoami /pgdiag /debug /help")
             else:
-                await bot.send_message(INITIAL_ADMIN, "⚠️ Bot started **without DB**. `DATABASE_URL` را ست کن و ری‌دیپلوی کن.\n/whoami /debug /help")
+                await bot.send_message(INITIAL_ADMIN, "⚠️ Bot started **without DB**. `DATABASE_URL` را ست کن و ری‌دیپلوی کن.\n/pgdiag /whoami /debug /help")
     except Exception as e:
         logging.exception("Failed to DM initial admin: %s", e)
 
