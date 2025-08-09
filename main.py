@@ -310,7 +310,8 @@ def admin_only(fn):
             await message.reply("⛔️ این دستور فقط برای ادمین‌هاست. /whoami رو بزن تا وضعیتت رو ببینی.")
             return
         try:
-            return await fn(message, *a, **kw)
+            # نـگـذرانـدن **kw تا state و... ارور ندن
+            return await fn(message, *a)
         except Exception as e:
             logging.exception("Admin command failed: %s", e)
             await message.reply(f"❌ خطا در اجرای دستور: {e}")
@@ -322,7 +323,8 @@ def require_db(fn):
             await message.reply("⛔️ دیتابیس در دسترس نیست. `DATABASE_URL` را تنظیم کن و ری‌دیپلوی کن. /pgdiag و /debug را هم بزن.")
             return
         try:
-            return await fn(message, *a, **kw)
+            # اینجا هم **kw پاس نده
+            return await fn(message, *a)
         except Exception as e:
             logging.exception("DB-backed command failed: %s", e)
             await message.reply(f"❌ خطای دیتابیس: {e}")
