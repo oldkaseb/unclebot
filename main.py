@@ -5,6 +5,7 @@ import time
 import asyncio
 import aiohttp
 import asyncpg
+import logging
 
 from collections import defaultdict
 from aiogram import Bot, Dispatcher, types
@@ -15,6 +16,9 @@ from aiogram.types import (
 )
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
+
+# Logging
+logging.basicConfig(level=logging.INFO)
 
 # ENV
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -203,7 +207,7 @@ def admin_only(fn):
     return wrapper
 
 
-# === part 3: membership, start, album cache, admin commands ===
+# === part 3: membership, start, commands, album cache, admin commands ===
 async def check_membership(user_id):
     ok = True
     for ch in [CHANNEL_1, CHANNEL_2]:
@@ -222,6 +226,10 @@ async def start(message: types.Message):
         await message.answer("🎉 سلام عمو! یکی از دکمه‌ها رو بزن:", reply_markup=main_kb)
     else:
         await message.answer("👋 اول باید عضو هر دو کانال شی:", reply_markup=join_keyboard())
+
+@dp.message_handler(commands=['ping'])
+async def ping_cmd(message: types.Message):
+    await message.reply("🏓 pong")
 
 @dp.message_handler(commands=['help'])
 async def help_cmd(message: types.Message):
@@ -427,7 +435,7 @@ async def topqueries(message: types.Message):
 
 # === part 4: artistic/cinematic search (no portrait/orientation) ===
 async def search_photos(query, page=1):
-    # استایل ثابت هنری/سینمایی (بدون هیچ ضدچهره‌ای و بدون محدودیت orientation)
+    # استایل ثابت هنری/سینمایی
     suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, film look"
     q = f"{query}{suffix}"
 
@@ -519,7 +527,7 @@ async def handle_search(message: types.Message):
     await message.answer("🎬اگه بازم می‌خوای، دوباره جستجو کن", reply_markup=retry_keyboard("search"))
 
 
-# === part 5: random three + callbacks + main text handler ===
+# === part 5: callbacks, random three, command catch-all, main text handler ===
 @dp.callback_query_handler(lambda c: c.data in ["random", "search"])
 async def retry_handler(call: types.CallbackQuery):
     if not await check_membership(call.from_user.id):
@@ -557,14 +565,16 @@ async def cancel_search(message: types.Message):
     exit_search_mode(message.from_user.id)
     await message.reply("✅ از حالت جستجو خارج شدی.", reply_markup=main_kb)
 
-# ⚠️ دیباگ: ببینیم اصلاً کامند به ربات می‌رسه یا نه
-@dp.message_handler(lambda m: m.text and m.text.startswith('/'))
-async def debug_commands(message: types.Message):
-    # اگر /help یا /whoami توسط هندلر خودش گرفته نشه، اینجا حداقل جواب می‌ده
-    if message.text not in ['/help', '/whoami', '/dbstats', '/topqueries', '/addadmin', '/deladmin', '/send', '/addphoto', '/delphoto', '/cancel', '/start']:
-        await message.reply(f"DBG got command: {message.text}")
+# هر کامندی که هندلر اختصاصی نداشته باشه، اینجا میاد (بازخورد سریع)
+@dp.message_handler(lambda m: m.text and m.text.startswith('/') and m.text.split()[0] not in [
+    '/start','/help','/whoami','/dbstats','/topqueries','/addadmin','/deladmin',
+    '/send','/addphoto','/delphoto','/cancel','/ping'
+])
+async def unknown_command(message: types.Message):
+    await message.reply(f"❓ این دستور شناخته نشد: {message.text}\n/help رو بزن.")
 
-@dp.message_handler()
+# فقط متن‌های غیرکامند اینجا هندل می‌شن
+@dp.message_handler(lambda m: m.text and not m.text.startswith('/'))
 async def handle_message(message: types.Message):
     uid = int(message.from_user.id)
     txt = (message.text or "").strip()
@@ -622,8 +632,15 @@ async def on_startup(dp):
         BotCommand("addadmin", "افزودن ادمین (ادمین)"),
         BotCommand("deladmin", "حذف ادمین (ادمین)"),
         BotCommand("dbstats", "آمار دیتابیس (ادمین)"),
-        BotCommand("topqueries", "برترین جستجوها (ادمین)")
+        BotCommand("topqueries", "برترین جستجوها (ادمین)"),
+        BotCommand("ping", "تست زنده بودن ربات")
     ])
+    # پیام تست استارتاپ برای ادمین اول
+    try:
+        if INITIAL_ADMIN:
+            await bot.send_message(INITIAL_ADMIN, "✅ Bot started. /whoami یا /ping رو بزن.")
+    except Exception as e:
+        logging.exception("Failed to DM initial admin: %s", e)
 
 if __name__ == "__main__":
     # مطمئن شو فقط یک سرویس با همین BOT_TOKEN فعاله
