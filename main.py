@@ -427,9 +427,9 @@ async def pgdiag(message: types.Message):
 @dp.callback_query_handler(lambda c: c.data == "check_join")
 async def check_join(call: types.CallbackQuery):
     if await check_membership(call.from_user.id):
-        await call.message.answer("✅ درسته! بزن بریم:", reply_markup=main_kb)
+        await call.message.answer("✅ به به آفرین حالا از دکمه ها استفاده کن عمو", reply_markup=main_kb)
     else:
-        await call.message.answer("⛔️ هنوز عضو هر دو کانال نشدی!", reply_markup=join_keyboard())
+        await call.message.answer("⛔️ هنوز عضو هر دو کانال نشدی عمو!", reply_markup=join_keyboard())
 
 # آلبوم ادمین برای /send
 @dp.message_handler(content_types=['photo'])
