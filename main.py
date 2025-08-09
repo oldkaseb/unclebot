@@ -623,7 +623,7 @@ async def topqueries(message: types.Message):
 # ---------- Artistic/Cinematic Search ----------
 async def search_photos(query, page=1):
     # استایل ثابت فقط برای کوئری‌های انگلیسی اضافه می‌شود
-    suffix = ", profile picture"
+    suffix = ", "
     q = f"{query}{suffix}" if _is_english(query) else query
 
     urls = []
