@@ -97,6 +97,11 @@ def in_search_mode(user_id: int) -> bool:
     SEARCH_MODE[user_id] = time.time()  # touch
     return True
 
+# ---------- Helpers ----------
+def _is_english(text: str) -> bool:
+    # اگر تمام کاراکترها ASCII باشند، متن را انگلیسی در نظر می‌گیریم
+    return all(ch.isascii() for ch in (text or ""))
+
 # ---------- DB ----------
 PG_POOL = None
 DB_READY = False
@@ -617,9 +622,9 @@ async def topqueries(message: types.Message):
 
 # ---------- Artistic/Cinematic Search ----------
 async def search_photos(query, page=1):
-    # استایل ثابت هنری/سینمایی
-    suffix = ", aesthetic"
-    q = f"{query}{suffix}"
+    # استایل ثابت فقط برای کوئری‌های انگلیسی اضافه می‌شود
+    suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, film look"
+    q = f"{query}{suffix}" if _is_english(query) else query
 
     urls = []
     async with aiohttp.ClientSession() as s:
@@ -718,7 +723,7 @@ async def retry_handler(call: types.CallbackQuery):
         await send_random(call.message, call.from_user.id)
     elif call.data == "search":
         enter_search_mode(call.from_user.id)
-        await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم!انگلیسی باشه بهتره")
+        await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم! انگلیسی باشه بهتره")
 
 @require_db
 async def send_random(message, user_id):
@@ -774,7 +779,7 @@ async def handle_text(message: types.Message):
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
         enter_search_mode(uid)
-        await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم انگلیسی باشه بهتره")
+        await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم (انگلیسی باشه بهتره)")
         return
 
     elif txt == "ℹ️ درباره من":
