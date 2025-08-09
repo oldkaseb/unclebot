@@ -718,7 +718,7 @@ async def retry_handler(call: types.CallbackQuery):
         await send_random(call.message, call.from_user.id)
     elif call.data == "search":
         enter_search_mode(call.from_user.id)
-        await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم!")
+        await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم!انگلیسی باشه بهتره")
 
 @require_db
 async def send_random(message, user_id):
@@ -774,7 +774,7 @@ async def handle_text(message: types.Message):
         if not await check_membership(uid):
             await message.reply("⛔️ اول باید عضو کانالا باشی!", reply_markup=join_keyboard()); return
         enter_search_mode(uid)
-        await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم")
+        await message.reply("🔎 خب عمو، یه کلمه بفرست برات عکسای خفن بیارم انگلیسی باشه بهتره")
         return
 
     elif txt == "ℹ️ درباره من":
