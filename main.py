@@ -1,4 +1,4 @@
-# === main.py — Final ===
+# === main.py — Final with DB guards ===
 import os
 import random
 import time
@@ -98,6 +98,7 @@ def in_search_mode(user_id: int) -> bool:
 
 # ---------- DB ----------
 PG_POOL = None
+DB_READY = False
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -154,8 +155,29 @@ async def db_fetch(sql, *args):
     async with PG_POOL.acquire() as conn:
         return await conn.fetch(sql, *args)
 
+async def db_fetchval(sql, *args):
+    async with PG_POOL.acquire() as conn:
+        return await conn.fetchval(sql, *args)
+
+async def safe_init_db():
+    """Init DB safely and set DB_READY with logs."""
+    global DB_READY
+    if not PG_DSN:
+        DB_READY = False
+        logging.error("DATABASE_URL not set. Admin/DB-backed commands will not work.")
+        return
+    try:
+        await init_db()
+        await ensure_initial_admin()
+        DB_READY = True
+        logging.info("DB connected and ready.")
+    except Exception as e:
+        DB_READY = False
+        logging.exception("DB init failed: %s", e)
+
 # CRUD helpers
 async def upsert_user(u: types.User):
+    if not DB_READY: return
     await db_execute(
         """INSERT INTO users(user_id,name,username)
            VALUES($1,$2,$3)
@@ -197,6 +219,8 @@ async def store_seen_urls(user_id: int, query: str, urls: list):
 
 # admin helpers
 async def is_admin(user_id: int) -> bool:
+    if not DB_READY:
+        return False
     r = await db_fetch("SELECT 1 FROM admins WHERE user_id=$1", user_id)
     return bool(r)
 
@@ -210,6 +234,18 @@ def admin_only(fn):
         except Exception as e:
             logging.exception("Admin command failed: %s", e)
             await message.reply(f"❌ خطا در اجرای دستور: {e}")
+    return wrapper
+
+def require_db(fn):
+    async def wrapper(message: types.Message, *a, **kw):
+        if not DB_READY:
+            await message.reply("⛔️ دیتابیس در دسترس نیست. `DATABASE_URL` را تنظیم کن و ری‌دیپلوی کن. /debug را هم بزن.")
+            return
+        try:
+            return await fn(message, *a, **kw)
+        except Exception as e:
+            logging.exception("DB-backed command failed: %s", e)
+            await message.reply(f"❌ خطای دیتابیس: {e}")
     return wrapper
 
 # ---------- Membership ----------
@@ -227,7 +263,7 @@ async def check_membership(user_id):
 # ---------- Commands ----------
 @dp.message_handler(CommandStart())
 async def start(message: types.Message):
-    await upsert_user(message.from_user)
+    await upsert_user(message.from_user)  # no-op if DB not ready
     if await check_membership(message.from_user.id):
         await message.answer("🎉 سلام عمو! یکی از دکمه‌ها رو بزن:", reply_markup=main_kb)
     else:
@@ -255,7 +291,7 @@ async def help_cmd(message: types.Message):
             "• /debug — وضعیت ادمین/کانال/DB\n\n"
             "کلیدها:\n"
             "📸 عکس به سلیقه عمو — ۳ عکس تصادفی جدید\n"
-            "🔍 جستجوی دلخواه — جستجو با استایل هنری و بدون تکرار"
+            "🔍 جستجوی دلخواه — جستجو با استایل هنری/سینمایی و بدون تکرار"
         )
     else:
         await message.reply(
@@ -281,11 +317,12 @@ async def debug_cmd(message: types.Message):
         member_ok = await check_membership(uid)
     except Exception:
         member_ok = False
-    db_ok = True
-    try:
-        await db_fetch("SELECT 1")
-    except Exception:
-        db_ok = False
+    db_ok = DB_READY
+    if DB_READY:
+        try:
+            await db_fetchval("SELECT 1")
+        except Exception:
+            db_ok = False
     await message.reply(
         "🔎 DEBUG\n"
         f"• user_id: {uid}\n"
@@ -321,6 +358,7 @@ async def cache_admin_album(message: types.Message):
 # --- Admin management ---
 @dp.message_handler(commands=['whoadmins'])
 @admin_only
+@require_db
 async def whoadmins(message: types.Message):
     rows = await db_fetch("SELECT user_id, added_at FROM admins ORDER BY added_at ASC")
     if not rows:
@@ -331,6 +369,7 @@ async def whoadmins(message: types.Message):
 
 @dp.message_handler(commands=['addadmin'])
 @admin_only
+@require_db
 async def addadmin(message: types.Message):
     parts = (message.text or "").split()
     if len(parts) != 2 or not parts[1].isdigit():
@@ -343,6 +382,7 @@ async def addadmin(message: types.Message):
 
 @dp.message_handler(commands=['deladmin'])
 @admin_only
+@require_db
 async def deladmin(message: types.Message):
     parts = (message.text or "").split()
     if len(parts) != 2 or not parts[1].isdigit():
@@ -356,6 +396,7 @@ async def deladmin(message: types.Message):
 # --- Broadcast (single/album) ---
 @dp.message_handler(commands=["send"])
 @admin_only
+@require_db
 async def send_cmd(message: types.Message):
     if not message.reply_to_message:
         await message.reply("⛔️ باید روی یک پیام (یا یکی از عکس‌های آلبوم) ریپلای کنی.")
@@ -402,6 +443,7 @@ async def send_cmd(message: types.Message):
 # --- Add/cleanup photos in Channel 4 ---
 @dp.message_handler(commands=["addphoto"])
 @admin_only
+@require_db
 async def addphoto(message: types.Message):
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply("⛔️ باید روی یک عکس ریپلای کنی.")
@@ -420,6 +462,7 @@ async def addphoto(message: types.Message):
 
 @dp.message_handler(commands=["delphoto"])
 @admin_only
+@require_db
 async def delphoto(message: types.Message):
     await message.reply("⌛ در حال بررسی عکس‌های حذف‌شده...")
     rows = await db_fetch("SELECT message_id FROM posted_photos")
@@ -436,26 +479,33 @@ async def delphoto(message: types.Message):
 # --- Stats ---
 @dp.message_handler(commands=['dbstats'])
 @admin_only
+@require_db
 async def dbstats(message: types.Message):
     await message.reply("⌛ جمع‌آوری آمار...")
-    total_users   = (await db_fetch("SELECT COUNT(*) c FROM users"))[0]['c']
-    total_posted  = (await db_fetch("SELECT COUNT(*) c FROM posted_photos"))[0]['c']
-    total_used    = (await db_fetch("SELECT COUNT(*) c FROM used_photos"))[0]['c']
-    total_hist    = (await db_fetch("SELECT COUNT(*) c FROM search_history"))[0]['c']
-    today_hist    = (await db_fetch("SELECT COUNT(*) c FROM search_history WHERE seen_at::date=now()::date"))[0]['c']
-    week_hist     = (await db_fetch("SELECT COUNT(*) c FROM search_history WHERE seen_at>=now()-interval '7 days'"))[0]['c']
-    await message.reply(
-        "📊 آمار دیتابیس:\n"
-        f"👥 Users: {total_users}\n"
-        f"🖼 Posted: {total_posted}\n"
-        f"✅ Used: {total_used}\n"
-        f"🔎 History: {total_hist}\n"
-        f"   • امروز: {today_hist}\n"
-        f"   • ۷ روز اخیر: {week_hist}"
-    )
+    try:
+        total_users  = await db_fetchval("SELECT COUNT(*) FROM users")
+        total_posted = await db_fetchval("SELECT COUNT(*) FROM posted_photos")
+        total_used   = await db_fetchval("SELECT COUNT(*) FROM used_photos")
+        total_hist   = await db_fetchval("SELECT COUNT(*) FROM search_history")
+        today_hist   = await db_fetchval("SELECT COUNT(*) FROM search_history WHERE seen_at::date = now()::date")
+        week_hist    = await db_fetchval("SELECT COUNT(*) FROM search_history WHERE seen_at >= now() - interval '7 days'")
+        await message.reply(
+            "📊 آمار دیتابیس:\n"
+            f"👥 Users: {total_users or 0}\n"
+            f"🖼 Posted: {total_posted or 0}\n"
+            f"✅ Used: {total_used or 0}\n"
+            f"🔎 History: {total_hist or 0}\n"
+            f"   • امروز: {today_hist or 0}\n"
+            f"   • ۷ روز اخیر: {week_hist or 0}"
+        )
+    except Exception as e:
+        logging.exception("dbstats failed: %s", e)
+        await message.reply(f"❌ خطا در آمار: {e}\n"
+                            "🔧 اگر تازه دیپلوی کردی، یک بار /debug رو بزن و وضعیت DB رو ببین.")
 
 @dp.message_handler(commands=['topqueries'])
 @admin_only
+@require_db
 async def topqueries(message: types.Message):
     await message.reply("⌛ محاسبهٔ برترین جستجوها...")
     rows = await db_fetch("""
@@ -475,7 +525,7 @@ async def topqueries(message: types.Message):
 # ---------- Artistic/Cinematic Search ----------
 async def search_photos(query, page=1):
     # استایل ثابت هنری/سینمایی
-    suffix = ", aesthetic"
+    suffix = ", aesthetic, cinematic, soft lighting, bokeh, shallow depth of field, film look"
     q = f"{query}{suffix}"
 
     urls = []
@@ -536,6 +586,7 @@ async def search_photos(query, page=1):
             unique.append(u)
     return unique
 
+@require_db
 async def handle_search(message: types.Message):
     # تمدید تایم‌اوت مود جستجو
     SEARCH_MODE[message.from_user.id] = time.time()
@@ -576,6 +627,7 @@ async def retry_handler(call: types.CallbackQuery):
         enter_search_mode(call.from_user.id)
         await call.message.answer("🔎 یه کلمه بفرست تا برات عکساشو بیارم!")
 
+@require_db
 async def send_random(message, user_id):
     picks = await pick_unseen_for_user(int(user_id), limit=3)
     if not picks:
@@ -664,8 +716,10 @@ async def global_errors_handler(update, error):
 
 # ---------- Startup ----------
 async def on_startup(dp):
-    await init_db()
-    await ensure_initial_admin()
+    # init DB safely
+    await safe_init_db()
+
+    # register bot commands
     await bot.set_my_commands([
         BotCommand("start", "شروع"),
         BotCommand("help", "راهنما"),
@@ -682,9 +736,14 @@ async def on_startup(dp):
         BotCommand("topqueries", "برترین جستجوها (ادمین)"),
         BotCommand("ping", "تست زنده بودن ربات"),
     ])
+
+    # notify initial admin
     try:
         if INITIAL_ADMIN:
-            await bot.send_message(INITIAL_ADMIN, "✅ Bot started. /whoami یا /ping رو بزن.")
+            if DB_READY:
+                await bot.send_message(INITIAL_ADMIN, "✅ Bot started. DB: OK\n/whoami /debug /help")
+            else:
+                await bot.send_message(INITIAL_ADMIN, "⚠️ Bot started **without DB**. `DATABASE_URL` را ست کن و ری‌دیپلوی کن.\n/whoami /debug /help")
     except Exception as e:
         logging.exception("Failed to DM initial admin: %s", e)
 
